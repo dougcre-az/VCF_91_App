@@ -7456,7 +7456,6 @@ const VCFApp = () => {
       const [instanceFleetAssignments, setInstanceFleetAssignments] = useState({});
       const [domainInstanceAssignments, setDomainInstanceAssignments] = useState({});
       const [capabilityScopeAssignments, setCapabilityScopeAssignments] = useState({});
-      const [showDiscovery, setShowDiscovery] = useState(false);
       const [archFocusTarget, setArchFocusTarget] = useState(null);
       const [hldEdgeStrategy, setHldEdgeStrategy] = useState('COLLAPSED_EDGE');
       const [networkingDecision, setNetworkingDecision] = useState({
@@ -7519,6 +7518,11 @@ const VCFApp = () => {
       const [hldIncDsm, setHldIncDsm] = useState(false); // DSM solution-pattern toggle
       const [hldIncAvi, setHldIncAvi] = useState(false); // Phase-6 Avi in-scope (can be seeded from Placement)
       const [hldIncHcx, setHldIncHcx] = useState(false); // Phase-6 HCX in-scope (can be seeded from Placement)
+      useEffect(() => {
+        if (architectDecisionInputs.hldStorageTopology === 'DISAGGREGATED') {
+          setArchitectDecisionInput('hldStorageTopology', 'HCI');
+        }
+      }, [architectDecisionInputs.hldStorageTopology]);
       const [manualVksScope, setManualVksScope] = useState(null);
       const [aviDecision, setAviDecision] = useState({
         scaffold: true,
@@ -7698,18 +7702,15 @@ const VCFApp = () => {
 
       const focusArchAnchor = (id, { openDiscovery = false } = {}) => {
         if (!id) return;
-        if (openDiscovery) setShowDiscovery(true);
         setArchFocusTarget(id);
         if (archFocusClearRef.current) window.clearTimeout(archFocusClearRef.current);
         const resolveTarget = () => {
           let el = document.getElementById(id);
           if (!el && String(id).startsWith('arch-domain-')) {
-            el = document.getElementById('arch-wld-plane') || document.getElementById('arch-wld-mapping');
-            if (el && el.id === 'arch-wld-mapping') setShowDiscovery(true);
+            el = document.getElementById('arch-wld-plane') || document.getElementById('arch-fleet-overview');
           }
           if (!el && String(id).startsWith('arch-instance-')) {
-            el = document.getElementById('arch-mgmt-plane') || document.getElementById('arch-mgmt-source');
-            if (el && el.id === 'arch-mgmt-source') setShowDiscovery(true);
+            el = document.getElementById('arch-mgmt-plane') || document.getElementById('arch-fleet-overview');
           }
           return el;
         };
@@ -7717,10 +7718,7 @@ const VCFApp = () => {
           const el = resolveTarget();
           if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         };
-        requestAnimationFrame(() => {
-          scrollToTarget();
-          if (openDiscovery) window.setTimeout(scrollToTarget, 80);
-        });
+        requestAnimationFrame(() => { scrollToTarget(); });
         archFocusClearRef.current = window.setTimeout(() => {
           setArchFocusTarget(current => (current === id ? null : current));
         }, 1800);
@@ -8272,7 +8270,7 @@ const VCFApp = () => {
           if (derivedAvi) add('NETWORK', 'Avi Load Balancing Design', aviDecision.scaffold ? 'Scaffold — open Avi Configurator' : (aviDecision.decision || aviDecision.haModelLabel || 'Avi in scope'), aviDecision.summary || 'Open the Avi Configurator for published SE tiers and HA footprint.');
           if (hldIncDsm) add('SOLUTIONS', 'Data Services Manager Scope', dsmDecision.scaffold ? 'Scaffold — not yet sized' : (dsmDecision.decision || 'DSM in scope'), dsmDecision.summary || 'Open the DSM Planner to capture engine scope (capacity deferred).');
           if (hldIncSEC) add('SECURITY', 'vDefend Coverage Model', vdefendDecision.scaffold ? 'Scaffold — open vDefend Coverage' : (vdefendDecision.decision || 'Security services in scope'), vdefendDecision.summary || 'Open vDefend Coverage for zone × enforcement gap analysis.');
-          if (architectDecisionInputs.hldRecoveryObjectives !== 'UNRESOLVED' && architectDecisionInputs.hldRecoveryObjectives) add('RESILIENCE', 'Recovery Objectives', architectDecisionInputs.hldRecoveryObjectives, 'The selected RPO, RTO and retention target drives replication frequency, recovery capacity, bandwidth and orchestration requirements.');
+          if (architectDecisionInputs.hldRecoveryObjectives !== 'UNRESOLVED' && architectDecisionInputs.hldRecoveryObjectives) add('RESILIENCE', 'Recovery Objectives', recoveryObjectiveLabel_(architectDecisionInputs.hldRecoveryObjectives), 'The selected RPO, RTO and retention target drives replication frequency, recovery capacity, bandwidth and orchestration requirements.');
 
           // 10. Distributed Edge Pattern Matrix
           if (siteProfiles && siteProfiles.length > 0) {
@@ -8527,6 +8525,15 @@ const VCFApp = () => {
         };
       }, [vcgData.designDecisions, vcgData['Design Decisions'], vcgData.designIds, vcgData['Design IDs'], vcgData.design_ids, designDecisionContext, hldIncAI, derivedAuto, complianceScope.VKS, activeEdgePatternNums, derivedHcx, hldStorageProto, architectDecisionInputs.hldStorageTopology, networkingDecision.networkingModel]);
 
+      const RECOVERY_OBJECTIVE_LABELS_ = {
+        MISSION_CRITICAL: 'RPO ≤15m | RTO ≤1h | Retention 30d',
+        BUSINESS_CRITICAL: 'RPO ≤1h | RTO ≤4h | Retention 30d',
+        STANDARD_OBJ: 'RPO ≤24h | RTO ≤24h | Retention 14d',
+        CUSTOM: 'Architect-defined recovery objectives',
+        UNRESOLVED: 'UNRESOLVED'
+      };
+      const recoveryObjectiveLabel_ = (value) => RECOVERY_OBJECTIVE_LABELS_[value] || value || 'UNRESOLVED';
+
       /** Phase 6 Architect decision-extension keys that must map to Design ID Trigger Criteria for export. */
       const ARCHITECT_EXTENSION_KEYS_ = [
         { key: 'hldArchitectureModel', label: 'Platform architecture model', group: 'Architecture', options: [
@@ -8539,7 +8546,7 @@ const VCFApp = () => {
           { value: 'NONE', label: 'None' }, { value: 'ISOLATED', label: 'Isolated VPCs' }, { value: 'COMMUNITY', label: 'Community connectivity' }, { value: 'SHARED_SERVICES', label: 'Shared services' }
         ] },
         { key: 'hldStorageTopology', label: 'Primary storage topology', group: 'Storage', options: [
-          { value: 'HCI', label: 'Hyperconverged' }, { value: 'DISAGGREGATED', label: 'Disaggregated vSAN' }, { value: 'EXTERNAL', label: 'External storage' }
+          { value: 'HCI', label: 'Hyperconverged (vSAN HCI)' }, { value: 'EXTERNAL', label: 'External storage' }
         ] },
         { key: 'hldEncryptionScope', label: 'Storage encryption scope', group: 'Storage', when: (ctx) => ctx.hldStorageTopology !== 'EXTERNAL', options: [
           { value: 'NONE', label: 'None by platform policy' }, { value: 'AT_REST', label: 'At rest' }, { value: 'IN_TRANSIT', label: 'In transit' }, { value: 'BOTH', label: 'At rest and in transit' }
@@ -8547,7 +8554,13 @@ const VCFApp = () => {
         { key: 'hldProtectionModel', label: 'Protection model', group: 'Protection', options: [
           { value: 'BACKUP', label: 'Backup' }, { value: 'LOCAL_RECOVERY', label: 'Local recovery' }, { value: 'REPLICATION', label: 'Site replication' }, { value: 'CYBER_VAULT', label: 'Isolated cyber vault' }
         ] },
-        { key: 'hldRecoveryObjectives', label: 'Recovery objectives', group: 'Protection', control: 'recoveryObjectives' },
+        { key: 'hldRecoveryObjectives', label: 'Recovery objectives', group: 'Protection', control: 'recoveryObjectives', options: [
+          { value: 'UNRESOLVED', label: 'Select an objective…' },
+          { value: 'MISSION_CRITICAL', label: 'Mission critical · 15m / 1h / 30d' },
+          { value: 'BUSINESS_CRITICAL', label: 'Business critical · 1h / 4h / 30d' },
+          { value: 'STANDARD_OBJ', label: 'Standard · 24h / 24h / 14d' },
+          { value: 'CUSTOM', label: 'Architect-defined' }
+        ] },
         { key: 'hldPlacementGovernance', label: 'Automation placement governance', group: 'Automation', when: (ctx) => !!ctx.derivedAuto, options: [
           { value: 'UNRESOLVED', label: 'Select governance model…' }, { value: 'NONE', label: 'No extra placement policies' }, { value: 'CLOUD_ZONES', label: 'Cloud zones' }, { value: 'TAG_BASED', label: 'Tag / capability-based' }, { value: 'PROJECT_REGULATORY', label: 'Project + regulatory / data locality' }, { value: 'CUSTOM', label: 'Architect-defined (CUSTOM)' }
         ] },
@@ -8580,15 +8593,20 @@ const VCFApp = () => {
 
       const architectExtensionCoverage = useMemo(() => {
         const source = vcgData.designIds || vcgData['Design IDs'] || vcgData.design_ids || [];
+        const activeBuckets = Object.keys(complianceScope).filter(k => complianceScope[k]);
+        // Decision-led coverage must see CERT/BKP/CLS even when hideStaticBaselines filters the matrix view.
+        const coveragePool = source.filter(row => {
+          const bucket = String(row.bucket || row.Bucket || row.domainbucket || '').toUpperCase().trim();
+          return !bucket || activeBuckets.includes(bucket);
+        });
         const scoreStatus = (item) => {
           const keys = [item.key, ...(item.aliases || [])].filter(Boolean);
-          const referencing = source.filter(row => {
+          const referencing = coveragePool.filter(row => {
             const tc = String(row['Trigger Criteria'] || row.triggerCriteria || row['trigger criteria'] || '');
             return keys.some(k => tc.includes(k));
           });
-          const matchingApplicable = activeApplicableDesignIds.filter(row => {
+          const matchingApplicable = referencing.filter(row => {
             const tc = String(row['Trigger Criteria'] || row.triggerCriteria || row['trigger criteria'] || '');
-            if (!keys.some(k => tc.includes(k))) return false;
             return evaluateTriggerCriteria(tc, designDecisionContext);
           });
           const catalogHitCount = referencing.length;
@@ -8630,7 +8648,7 @@ const VCFApp = () => {
             const bucket = String(row.bucket || row.Bucket || '').toUpperCase();
             return keys.some(k => tc.includes(k)) || bucketSet.has(bucket);
           });
-          const matchingApplicable = activeApplicableDesignIds.filter(row => {
+          const matchingApplicable = coveragePool.filter(row => {
             const tc = String(row['Trigger Criteria'] || row.triggerCriteria || row['trigger criteria'] || '');
             const bucket = String(row.bucket || row.Bucket || '').toUpperCase();
             const keyHit = keys.some(k => tc.includes(k));
@@ -8675,7 +8693,7 @@ const VCFApp = () => {
           noActiveMatch: actionable.filter(r => r.status === 'NO_ACTIVE_MATCH'),
           mapped: actionable.filter(r => r.status === 'MAPPED'),
         };
-      }, [vcgData.designIds, vcgData['Design IDs'], vcgData.design_ids, designDecisionContext, activeApplicableDesignIds, hldIncAI, hldIncDR, hldIncSEC, hldIncDsm, hldIncAvi, hldIncHcx, complianceScope.VKS, placementAvi, placementHcx]);
+      }, [vcgData.designIds, vcgData['Design IDs'], vcgData.design_ids, designDecisionContext, complianceScope, hldIncAI, hldIncDR, hldIncSEC, hldIncDsm, hldIncAvi, hldIncHcx, placementAvi, placementHcx]);
 
       const ADR_BUCKET_MAP = {
         COMPUTE: ['CORE', 'FLEET'], TOPOLOGY: ['CORE', 'VSAN', 'DR'], NETWORK: ['NET', 'NSX', 'EDGE', 'AVI'],
@@ -10356,6 +10374,10 @@ const architectureMath = useMemo(() => {
         { legacyId: 'VCF-SEC-REQD-CFG-004', canonicalId: 'VCF-SEC-REQD-CFG-004', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Platform security baseline when hldSecurityServices=BASELINE.' },
         { legacyId: 'VCF-BKP-REQD-CFG-003', canonicalId: 'VCF-BKP-REQD-CFG-003', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Workload backup protection model when hldProtectionModel=BACKUP.' },
         { legacyId: 'VCF-BKP-REQD-CFG-004', canonicalId: 'VCF-BKP-REQD-CFG-004', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Local recovery protection model when hldProtectionModel=LOCAL_RECOVERY.' },
+        { legacyId: 'VCF-BKP-REQD-CFG-005', canonicalId: 'VCF-BKP-REQD-CFG-005', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Mission-critical recovery objectives.' },
+        { legacyId: 'VCF-BKP-REQD-CFG-006', canonicalId: 'VCF-BKP-REQD-CFG-006', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Business-critical recovery objectives.' },
+        { legacyId: 'VCF-BKP-REQD-CFG-007', canonicalId: 'VCF-BKP-REQD-CFG-007', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Standard recovery objectives.' },
+        { legacyId: 'VCF-BKP-REQD-CFG-008', canonicalId: 'VCF-BKP-REQD-CFG-008', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Architect-defined recovery objectives.' },
         { legacyId: 'VCF-ID-REQD-CFG-001', canonicalId: 'VCF-ID-REQD-CFG-001', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Three-node Identity Broker HA when hldIdentityMode=THREE_NODE_HA.' },
         { legacyId: 'VCF-CERT-REQD-CFG-003', canonicalId: 'VCF-CERT-REQD-CFG-003', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'OpenSSL CA when hldCaModel=OPENSSL.' },
         { legacyId: 'VCF-CERT-REQD-CFG-004', canonicalId: 'VCF-CERT-REQD-CFG-004', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Enterprise PKI when hldCaModel=ENTERPRISE_PKI.' },
@@ -12990,7 +13012,7 @@ const architectureMath = useMemo(() => {
                     </div>
                     <div className="text-center text-xs text-slate-500 dark:text-slate-400 font-bold mb-4 mt-2 truncate px-2">{mgmtName}</div>
 
-                    <button type="button" onClick={() => focusArchAnchor('arch-mgmt-source', { openDiscovery: true })} className={`w-full text-left border-2 border-amber-400 dark:border-amber-600 p-4 rounded-xl bg-white dark:bg-slate-900 relative hover:border-amber-500 hover:shadow-md transition ${archFocusClass('arch-mgmt-source')}`} title="Scroll to management-domain discovery">
+                    <button type="button" onClick={() => focusArchAnchor('arch-fleet-overview')} className={`w-full text-left border-2 border-amber-400 dark:border-amber-600 p-4 rounded-xl bg-white dark:bg-slate-900 relative hover:border-amber-500 hover:shadow-md transition ${archFocusClass('arch-mgmt-source')}`} title="Scroll to management-domain discovery">
                         <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-white dark:bg-slate-900 px-3 text-amber-600 dark:text-amber-400 font-bold text-xs whitespace-nowrap">
                             Management Domain
                         </div>
@@ -13065,7 +13087,7 @@ const architectureMath = useMemo(() => {
                         </div>
                     </button>
 
-                    <button type="button" onClick={() => focusArchAnchor('arch-storage-proto', { openDiscovery: true })} className={`mt-3 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold py-1.5 px-3 rounded shadow-sm text-center border border-slate-300 dark:border-slate-600 w-full hover:bg-slate-300 transition ${archFocusClass('arch-storage-proto')}`} title="Scroll to primary storage protocol">
+                    <button type="button" onClick={() => focusArchAnchor('arch-fleet-overview')} className={`mt-3 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold py-1.5 px-3 rounded shadow-sm text-center border border-slate-300 dark:border-slate-600 w-full hover:bg-slate-300 transition ${archFocusClass('arch-storage-proto')}`} title="Scroll to primary storage protocol">
                         Storage and Network
                     </button>
                     <div className="mt-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold py-1.5 px-3 rounded shadow-sm text-center border border-slate-300 dark:border-slate-600 w-full">
@@ -13106,11 +13128,7 @@ const architectureMath = useMemo(() => {
             <div className="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
                <SizerPageToolbar
                   title="Fleet & Compliance"
-                  subtitle="Architect decision funnel is the primary Phase-6 control surface — optional left form remains for fleet topology only."
-                  showInputs={showDiscovery}
-                  onToggleInputs={() => setShowDiscovery(!showDiscovery)}
-                  hideLabel="Hide fleet form"
-                  showLabel="Show fleet form"
+                  subtitle="Architect decision funnel is the primary Phase-6 control surface after RVTools import."
                   actions={(
                     <>
                       <button onClick={downloadMgmtPNG} className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded shadow flex items-center transition whitespace-nowrap shrink-0"><IconCamera /> <span className="ml-2">Export Mgmt Plane</span></button>
@@ -13119,140 +13137,6 @@ const architectureMath = useMemo(() => {
                   )}
                />
                <div className="flex flex-1 min-h-0 overflow-hidden">
-               {showDiscovery && (
-                  <div className="w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 p-5 flex flex-col overflow-y-auto shrink-0 z-10 shadow-sm custom-scrollbar">
-                     <h3 className="font-black text-slate-800 dark:text-slate-100 uppercase tracking-widest text-xs mb-6">Discovery Questionnaire</h3>
-                     
-                     <div className="space-y-6">
-                        <div>
-                           <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Mgmt Infrastructure Source</label>
-                           <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none" value={fleetMode} onChange={(e) => setFleetMode(e.target.value)}>
-                              <option value="BROWNFIELD">Existing RVTools Clusters</option><option value="GREENFIELD">New Greenfield Design</option>
-                           </select>
-                           <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Controls whether capacity and placement begin with discovered RVTools inventory or planning assumptions.</p>
-                        </div>
-                        {fleetMode === 'BROWNFIELD' && (
-                           <div id="arch-mgmt-source" className={archFocusClass('arch-mgmt-source')}>
-                              <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Primary Mgmt Domain Cluster</label>
-                              <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 outline-none mt-1" value={fleetMgmtCluster} onChange={(e) => setFleetMgmtCluster(e.target.value)}>
-                                 <option value="" disabled>-- Select a Cluster --</option>{allClusters.map(c => <option key={c} value={c}>{c}</option>)}
-                              </select>
-                           </div>
-                        )}
-                        {fleetMode === 'GREENFIELD' && (
-                           <div id="arch-mgmt-source" className={`rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 ${archFocusClass('arch-mgmt-source')}`}>
-                              <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Management domain source</div>
-                              <p className="text-[10px] text-slate-600 dark:text-slate-300 mt-1">Greenfield planning uses the virtual management domains shown in the drawing.</p>
-                           </div>
-                        )}
-                        <div>
-                           <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">VCF instance topology<SizerInfo text="Each VCF instance has one management domain and may contain multiple workload domains. Match Broadcom design-library topology choices." href={SIZER_DOCS.vcfDesign.href} hrefLabel="VCF 9.1 design library" /></label>
-                           <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 outline-none" value={hldInstanceStrategy} onChange={(e) => { const value = e.target.value; setHldInstanceStrategy(value); if (value === 'MULTI_INSTANCE' && fleetMode === 'GREENFIELD') setGfInstanceCount(current => Math.max(2, current)); if (value === 'SINGLE_INSTANCE') { setArchitectDecisionInput('hldFleetBoundary', 'SINGLE_FLEET'); setMultiInstanceClusters([]); } }}>
-                              <option value="SINGLE_INSTANCE">One VCF instance</option><option value="MULTI_INSTANCE">Multiple VCF instances</option>
-                           </select>
-                           <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Each VCF instance has one management domain and may contain multiple workload domains.</p>
-                        </div>
-                        {hldInstanceStrategy === 'MULTI_INSTANCE' && fleetMode === 'BROWNFIELD' && (
-                           <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 p-3">
-                              <div className="text-[10px] font-black text-indigo-800 dark:text-indigo-300 mb-2">Additional management-domain clusters</div>
-                              <div className="space-y-1 max-h-32 overflow-y-auto">{allClusters.filter(cluster => cluster !== fleetMgmtCluster).map(cluster => <label key={cluster} className="flex items-center gap-2 text-[10px] font-bold text-slate-700 dark:text-slate-200"><input type="checkbox" checked={multiInstanceClusters.includes(cluster)} onChange={(e) => setMultiInstanceClusters(current => e.target.checked ? [...current, cluster] : current.filter(item => item !== cluster))} /> {cluster}</label>)}</div>
-                              <p className="text-[9px] text-indigo-700 dark:text-indigo-300 mt-2">Select only clusters that will become management domains; other clusters remain workload-domain candidates.</p>
-                           </div>
-                        )}
-                        {hldInstanceStrategy === 'MULTI_INSTANCE' && fleetMode === 'GREENFIELD' && <div><label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 block">VCF instance count</label><SizerNumberInput value={Math.max(2, gfInstanceCount)} onCommit={(value) => setGfInstanceCount(Math.max(2, Math.round(Number(value) || 2)))} min={2} className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-950" /></div>}
-                        {hldInstanceStrategy === 'MULTI_INSTANCE' && (
-                           <div>
-                              <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Fleet boundary</label>
-                              <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 outline-none" value={architectDecisionInputs.hldFleetBoundary} onChange={(e) => setArchitectDecisionInput('hldFleetBoundary', e.target.value)}>
-                                 <option value="SINGLE_FLEET">One fleet across all instances</option><option value="MULTIPLE_FLEETS">Multiple independent fleets</option>
-                              </select>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">One fleet shares fleet-level VCF Operations and Automation. Multiple fleets create separate operational, identity, lifecycle, and licensing boundaries.</p>
-                           </div>
-                        )}
-                        {hldInstanceStrategy === 'MULTI_INSTANCE' && architectDecisionInputs.hldFleetBoundary === 'MULTIPLE_FLEETS' && (
-                           <div><label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 block">Planned fleet count</label><SizerNumberInput value={fleetCount} onCommit={(value) => setFleetCount(Math.max(2, Math.round(Number(value) || 2)))} min={2} className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-950" /></div>
-                        )}
-                        <div>
-                           <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Workload Domain Mapping</label>
-                           <select id="arch-wld-mapping" className={`w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 outline-none ${archFocusClass('arch-wld-mapping')}`} value={fleetWldMapping} onChange={(e) => setFleetWldMapping(e.target.value)}>
-                              <option value="AUTO_PREFIX">Smart Map: Auto-Group by Prefix</option><option value="ONE_PER_CLUSTER">Import: Map 1 WLD per Cluster</option><option value="POOL_ALL">Import: Pool all into 1 WLD</option><option value="ONE_PER_VCENTER">Import: Map by vCenter</option>
-                           </select>
-                           <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Proposes vCenter and workload-domain boundaries. This affects lifecycle blast radius, scale and operational ownership.</p>
-                        </div>
-                        <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
-                           <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Site Topology</label>
-                           <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 outline-none" value={hldSiteTopology} onChange={(e) => setHldSiteTopology(e.target.value)}>
-                              <option value="SINGLE">Single Data Center</option><option value="STRETCHED">Dual-Site (vSAN Stretched)</option><option value="MULTI">Multi-Site (Geo-Distributed)</option>
-                           </select>
-                           <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Sets the availability model and determines which witness, federation and recovery requirements can apply.</p>
-                        </div>
-                        
-                        {/* NEW: Conditional Multi-Site Type Dropdown */}
-                        {hldSiteTopology === 'MULTI' && (
-                           <div className="animate-in fade-in slide-in-from-top-1 bg-sky-50 dark:bg-sky-950/40 -mx-5 px-5 py-3 border-y border-sky-100 dark:border-sky-800">
-                              <label className="text-[10px] font-black text-sky-800 dark:text-sky-300 uppercase tracking-widest mb-2 block">Multi-Site Architecture</label>
-                              <select className="w-full border border-sky-300 dark:border-sky-700 rounded px-3 py-2 text-sm font-bold text-sky-900 dark:text-sky-200 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={hldMultiSiteType} onChange={(e) => { 
-                                  setHldMultiSiteType(e.target.value); 
-                                  if(e.target.value === 'DR') setHldIncDR(true); 
-                              }}>
-                                 <option value="FEDERATED">Active/Active (Federated VCF)</option>
-                                 <option value="DR">Active/Passive (Live Recovery / DR)</option>
-                              </select>
-                           </div>
-                        )}
-                        <div>
-                           <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Gateway implementation</label>
-                           <div className={`rounded-lg border p-3 ${networkingDecision.implementation === 'REVIEW_REQUIRED' ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40' : 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40'}`}>
-                              <div className="text-xs font-black text-slate-800 dark:text-slate-100">{networkingDecision.implementation === 'EDGE_VM' ? 'NSX Edge VMs' : networkingDecision.implementation === 'EDGE_BARE_METAL' ? 'Bare-metal NSX Edge nodes' : networkingDecision.implementation === 'VNA' ? 'Virtual Network Appliance cluster' : networkingDecision.implementation === 'DISTRIBUTED' ? 'Distributed VLAN routing on ESXi hosts' : networkingDecision.implementation === 'DISTRIBUTED_EVPN' ? 'Distributed VXLAN through EVPN fabric' : networkingDecision.implementation === 'PHYSICAL_FABRIC' ? 'VLAN networking through physical fabric' : 'Architect review required'}</div>
-                              <p className="text-[10px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">{networkingDecision.summary}</p>
-                              <button type="button" onClick={() => setActiveModule('VCF_NETWORKING_SIZER')} className="text-[10px] font-bold text-blue-700 dark:text-blue-300 mt-2 hover:underline">Review in VCF Networking →</button>
-                           </div>
-                           {(networkingDecision.implementation === 'EDGE_VM' || networkingDecision.implementation === 'VNA') && (
-                              <div className="mt-3">
-                                 <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 block">Appliance placement</label>
-                                 <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 outline-none" value={hldEdgeStrategy.includes('DEDICATED') ? 'DEDICATED' : 'COLLAPSED'} onChange={(e) => setHldEdgeStrategy(`${e.target.value}_${networkingDecision.implementation === 'VNA' ? 'VNA' : 'EDGE'}`)}>
-                                    <option value="COLLAPSED">Collapsed on management or workload compute</option><option value="DEDICATED">Dedicated edge cluster</option>
-                                 </select>
-                                 <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">Networking decides which gateway technology is required. Phase 6 decides where its appliances run because placement affects failure domains, capacity and cost.</p>
-                              </div>
-                           )}
-                        </div>
-                        <div>
-                           <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Host Uplink Configuration</label>
-                           <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 outline-none" value={hldNicProfile} onChange={(e) => setHldNicProfile(e.target.value)}>
-                              <option value="2">2 Physical NICs (Collapsed Profile)</option><option value="4">4+ Physical NICs (Dedicated Profile)</option>
-                           </select>
-                           <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Chooses shared versus physically separated traffic paths; validate bandwidth, redundancy and switch-port availability.</p>
-                        </div>
-                        <div id="arch-storage-proto" className={archFocusClass('arch-storage-proto')}>
-                           <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Primary Storage Protocol</label>
-                           <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 outline-none" value={hldStorageProto} onChange={(e) => setHldStorageProto(e.target.value)}>
-                              <option value="VSAN_ESA">vSAN ESA (NVMe)</option><option value="VSAN_OSA">vSAN OSA (Flash/Hybrid)</option><option value="EXTERNAL">External Storage (FC/NFS)</option>
-                           </select>
-                           <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Changes hardware eligibility, protection-policy assumptions and which storage Design IDs remain relevant.</p>
-                        </div>
-                        <div>
-                           <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Workload Isolation</label>
-                           <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 outline-none" value={hldIsolation} onChange={(e) => setHldIsolation(e.target.value)}>
-                              <option value="LOGICAL">Logical (Shared WLD w/ NSX Gateways)</option><option value="PHYSICAL">Physical (Dedicated WLDs)</option>
-                           </select>
-                           <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Determines whether separation is policy-based or uses dedicated clusters/domains, changing cost and failure-domain boundaries.</p>
-                        </div>
-                        <div className="border-t border-slate-200 dark:border-slate-700 pt-5">
-                           <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">Architect decision extensions and solution patterns now live inline in the <span className="font-bold text-slate-700 dark:text-slate-200">High-Level Design Builder</span> coverage rows on the right — mapped / unmapped status updates as you change each control.</p>
-                        </div>
-                        {legacyClusters.length > 0 && (
-                           <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
-                              <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-slate-700 dark:text-slate-200">
-                                 <input type="checkbox" className="w-4 h-4 text-red-600 dark:text-red-400 rounded" checked={includeLegacyInDrawing} onChange={(e) => setIncludeLegacyInDrawing(e.target.checked)} /> Show retained vSphere 8 clusters
-                              </label>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 ml-6">{legacyClusters.length} cluster(s) pinned to vSphere 8 in the Upgrade Roadmap.</p>
-                           </div>
-                        )}
-                     </div>
-                  </div>
-               )}
-
                <div className="flex-1 p-8 overflow-y-auto custom-scrollbar bg-slate-100 dark:bg-slate-800 min-w-0 sizer-results-rail space-y-6">
                   <div>
                      <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">High-Level Design Builder</h2>
@@ -13264,9 +13148,15 @@ const architectureMath = useMemo(() => {
                     links={[SIZER_DOCS.vcfDesign, SIZER_DOCS.edgePatterns, SIZER_DOCS.techdocsHome, SIZER_DOCS.vcg]}
                   />
 
-                  <details className="ui-card p-5 mb-6" open>
-                     <summary className="cursor-pointer list-none flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4">
-                        <div><h3 className="font-black text-slate-900 dark:text-slate-100">Architect decision funnel</h3><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Primary Phase-6 decision surface after RVTools import — resolve parent decisions and edit solution / extension coverage here.</p></div>
+                  <details className="ui-card p-5 mb-6 group" open>
+                     <summary className="cursor-pointer flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4 list-none [&::-webkit-details-marker]:hidden">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <span className="mt-1 text-slate-400 dark:text-slate-500 text-xs font-black transition-transform group-open:rotate-90">▶</span>
+                          <div>
+                            <h3 className="font-black text-slate-900 dark:text-slate-100">Architect decision funnel</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Primary Phase-6 decision surface after RVTools import — resolve parent decisions and edit solution / extension coverage here.</p>
+                          </div>
+                        </div>
                         {!parentDecisionAudit.legacyMode && <span className={`inline-flex px-3 py-1.5 rounded-full border text-xs font-black ${parentDecisionAudit.unresolved.length ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300' : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300'}`}>{parentDecisionAudit.unresolved.length ? `${parentDecisionAudit.unresolved.length} decision${parentDecisionAudit.unresolved.length === 1 ? '' : 's'} unresolved` : 'Decision set resolved'}</span>}
                      </summary>
                      {parentDecisionAudit.legacyMode ? (
@@ -13282,8 +13172,7 @@ const architectureMath = useMemo(() => {
                            </div>
                            {parentDecisionAudit.unresolved.length > 0 && <details className="mt-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40" open><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-amber-900 dark:text-amber-200">Architect discovery queue ({parentDecisionAudit.unresolved.length})</summary><div className="px-3 pb-3 grid grid-cols-1 xl:grid-cols-2 gap-2">{parentDecisionAudit.unresolved.map(item => {
                               const isRecovery = item.contextKey === 'hldRecoveryObjectives';
-                              const recoveryPresets = ['RPO ≤15m | RTO ≤1h | Retention 30d','RPO ≤1h | RTO ≤4h | Retention 30d','RPO ≤24h | RTO ≤24h | Retention 14d'];
-                              const recoverySelectValue = architectDecisionInputs.hldRecoveryObjectives === 'UNRESOLVED' ? 'UNRESOLVED' : recoveryPresets.includes(architectDecisionInputs.hldRecoveryObjectives) ? architectDecisionInputs.hldRecoveryObjectives : 'CUSTOM';
+                              const recoverySelectValue = ['UNRESOLVED','MISSION_CRITICAL','BUSINESS_CRITICAL','STANDARD_OBJ','CUSTOM'].includes(architectDecisionInputs.hldRecoveryObjectives) ? architectDecisionInputs.hldRecoveryObjectives : (architectDecisionInputs.hldRecoveryObjectives ? 'CUSTOM' : 'UNRESOLVED');
                               const extensionDef = ARCHITECT_EXTENSION_KEYS_.find(def => def.key === item.contextKey);
                               return (
                                 <div key={item.decisionId} className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-900 p-3">
@@ -13293,16 +13182,13 @@ const architectureMath = useMemo(() => {
                                   <div className="mt-2">
                                     {isRecovery ? (
                                       <div className="space-y-1">
-                                        <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-950" value={recoverySelectValue} onChange={(e) => setArchitectDecisionInput('hldRecoveryObjectives', e.target.value === 'CUSTOM' ? 'Architect-defined recovery objectives' : e.target.value)}>
+                                        <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-950" value={recoverySelectValue} onChange={(e) => setArchitectDecisionInput('hldRecoveryObjectives', e.target.value)}>
                                           <option value="UNRESOLVED">Select an objective…</option>
-                                          <option value="RPO ≤15m | RTO ≤1h | Retention 30d">Mission critical · 15m / 1h / 30d</option>
-                                          <option value="RPO ≤1h | RTO ≤4h | Retention 30d">Business critical · 1h / 4h / 30d</option>
-                                          <option value="RPO ≤24h | RTO ≤24h | Retention 14d">Standard · 24h / 24h / 14d</option>
+                                          <option value="MISSION_CRITICAL">Mission critical · 15m / 1h / 30d</option>
+                                          <option value="BUSINESS_CRITICAL">Business critical · 1h / 4h / 30d</option>
+                                          <option value="STANDARD_OBJ">Standard · 24h / 24h / 14d</option>
                                           <option value="CUSTOM">Architect-defined</option>
                                         </select>
-                                        {recoverySelectValue === 'CUSTOM' && (
-                                          <input className="w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs bg-white dark:bg-slate-950" value={architectDecisionInputs.hldRecoveryObjectives} onChange={(e) => setArchitectDecisionInput('hldRecoveryObjectives', e.target.value || 'Architect-defined recovery objectives')} placeholder="Example: RPO 30m | RTO 2h | Retention 45d" />
-                                        )}
                                       </div>
                                     ) : extensionDef?.options?.length ? (
                                       <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-950" value={architectDecisionInputs[item.contextKey] ?? ''} onChange={(e) => setArchitectDecisionInput(item.contextKey, e.target.value)}>
@@ -13384,27 +13270,22 @@ const architectureMath = useMemo(() => {
                                            </label>
                                          )}
                                          {row.kind === 'extension' && row.control === 'recoveryObjectives' && (
-                                           <div>
-                                             <select className={selectCls} value={architectDecisionInputs.hldRecoveryObjectives === 'UNRESOLVED' ? 'UNRESOLVED' : ['RPO ≤15m | RTO ≤1h | Retention 30d','RPO ≤1h | RTO ≤4h | Retention 30d','RPO ≤24h | RTO ≤24h | Retention 14d'].includes(architectDecisionInputs.hldRecoveryObjectives) ? architectDecisionInputs.hldRecoveryObjectives : 'CUSTOM'} onChange={(e) => setArchitectDecisionInput('hldRecoveryObjectives', e.target.value === 'CUSTOM' ? 'Architect-defined recovery objectives' : e.target.value)}>
-                                               <option value="UNRESOLVED">Select an objective…</option>
-                                               <option value="RPO ≤15m | RTO ≤1h | Retention 30d">Mission critical · 15m / 1h / 30d</option>
-                                               <option value="RPO ≤1h | RTO ≤4h | Retention 30d">Business critical · 1h / 4h / 30d</option>
-                                               <option value="RPO ≤24h | RTO ≤24h | Retention 14d">Standard · 24h / 24h / 14d</option>
-                                               <option value="CUSTOM">Architect-defined</option>
-                                             </select>
-                                             {architectDecisionInputs.hldRecoveryObjectives !== 'UNRESOLVED' && !['RPO ≤15m | RTO ≤1h | Retention 30d','RPO ≤1h | RTO ≤4h | Retention 30d','RPO ≤24h | RTO ≤24h | Retention 14d'].includes(architectDecisionInputs.hldRecoveryObjectives) && (
-                                               <input className={`${selectCls} mt-1`} value={architectDecisionInputs.hldRecoveryObjectives} onChange={(e) => setArchitectDecisionInput('hldRecoveryObjectives', e.target.value || 'Architect-defined recovery objectives')} placeholder="Example: RPO 30m | RTO 2h | Retention 45d" />
-                                             )}
-                                           </div>
+                                           <select className={selectCls} value={['UNRESOLVED','MISSION_CRITICAL','BUSINESS_CRITICAL','STANDARD_OBJ','CUSTOM'].includes(architectDecisionInputs.hldRecoveryObjectives) ? architectDecisionInputs.hldRecoveryObjectives : (architectDecisionInputs.hldRecoveryObjectives ? 'CUSTOM' : 'UNRESOLVED')} onChange={(e) => setArchitectDecisionInput('hldRecoveryObjectives', e.target.value)}>
+                                             <option value="UNRESOLVED">Select an objective…</option>
+                                             <option value="MISSION_CRITICAL">Mission critical · 15m / 1h / 30d</option>
+                                             <option value="BUSINESS_CRITICAL">Business critical · 1h / 4h / 30d</option>
+                                             <option value="STANDARD_OBJ">Standard · 24h / 24h / 14d</option>
+                                             <option value="CUSTOM">Architect-defined</option>
+                                           </select>
                                          )}
                                          {row.kind === 'extension' && row.control !== 'recoveryObjectives' && row.options?.length > 0 && (
-                                           <select className={selectCls} value={architectDecisionInputs[row.key]} onChange={(e) => onExtensionChange(e.target.value)}>
+                                           <select className={selectCls} value={row.key === 'hldStorageTopology' && architectDecisionInputs.hldStorageTopology === 'DISAGGREGATED' ? 'HCI' : architectDecisionInputs[row.key]} onChange={(e) => onExtensionChange(e.target.value)}>
                                              {row.options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                                            </select>
                                          )}
                                        </div>
                                        <div className="xl:text-right text-[10px] text-slate-400 dark:text-slate-500 font-mono break-all max-w-[12rem]">
-                                         {String(row.currentValue || '—').replaceAll('_', ' ')}
+                                         {row.key === 'hldRecoveryObjectives' ? recoveryObjectiveLabel_(row.currentValue) : String(row.currentValue || '—').replaceAll('_', ' ')}
                                        </div>
                                      </div>
                                    );
@@ -13413,9 +13294,12 @@ const architectureMath = useMemo(() => {
                            </div>
                   </details>
 
-                  <details className="ui-card p-5 mb-6">
-                     <summary className="cursor-pointer list-none flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4">
-                        <div><h3 className="font-black text-slate-900 dark:text-slate-100">Design ID evidence</h3><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Secondary evidence layer — workbook Design ID counts after scope and Trigger Criteria filters. Decisions are made in the funnel above.</p></div>
+                  <details className="ui-card p-5 mb-6 group">
+                     <summary className="cursor-pointer flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4 list-none [&::-webkit-details-marker]:hidden">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <span className="mt-1 text-slate-400 dark:text-slate-500 text-xs font-black transition-transform group-open:rotate-90">▶</span>
+                          <div><h3 className="font-black text-slate-900 dark:text-slate-100">Design ID evidence</h3><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Secondary evidence layer — workbook Design ID counts after scope and Trigger Criteria filters. Decisions are made in the funnel above.</p></div>
+                        </div>
                         {designIdAudit.reviewItems.length > 0 && <span className="inline-flex px-3 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-xs font-black">{designIdAudit.reviewItems.length} rule{designIdAudit.reviewItems.length === 1 ? '' : 's'} need mapping</span>}
                      </summary>
                      {designIdAudit.sourceCount === 0 ? (
@@ -13434,6 +13318,14 @@ const architectureMath = useMemo(() => {
                      )}
                   </details>
 
+                  <details className="ui-card p-5 mb-6 group">
+                     <summary className="cursor-pointer flex items-start gap-2 mb-4 list-none [&::-webkit-details-marker]:hidden">
+                        <span className="mt-1 text-slate-400 dark:text-slate-500 text-xs font-black transition-transform group-open:rotate-90">▶</span>
+                        <div>
+                          <h3 className="font-black text-slate-900 dark:text-slate-100">Architecture overview (optional)</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Instance counts and fleet dataflow are FYI — full topology/edge narrative remains in the Excel design-package export.</p>
+                        </div>
+                     </summary>
                   <div className="grid grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
                      <div className="ui-card p-4"><div className="text-xs font-bold text-slate-500 dark:text-slate-400">VCF instances</div><div className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{Math.max(1, mgmtDomains.length)}</div><div className="text-[10px] text-slate-400 dark:text-slate-500">management/control planes</div></div>
                      <div className="ui-card p-4"><div className="text-xs font-bold text-slate-500 dark:text-slate-400">Workload and edge domains</div><div className="text-2xl font-black text-blue-700 dark:text-blue-300 mt-1">{activeFleetDomains.length}</div><div className="text-[10px] text-slate-400 dark:text-slate-500">logical architecture units</div></div>
@@ -13476,8 +13368,10 @@ const architectureMath = useMemo(() => {
                      {specialistCapabilities.length > 0 && <details className="mt-3 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-emerald-900 dark:text-emerald-200">Place optional capabilities ({specialistCapabilities.length})</summary><div className="p-3"><p className="text-[10px] text-emerald-800 dark:text-emerald-300 mb-3">Choose the narrowest architectural boundary that owns each service. The diagram moves the capability to the selected fleet, VCF instance, or workload domain instead of implying that every fleet receives it.</p><div className="grid grid-cols-1 lg:grid-cols-2 gap-2">{specialistCapabilities.map(capability => <label key={capability.label} className="grid grid-cols-[1fr_220px] items-center gap-2 rounded border border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-900 p-2 text-[10px] font-bold text-slate-700 dark:text-slate-200"><span className="inline-flex items-center gap-2 truncate text-emerald-800 dark:text-emerald-300">{capability.icon}{capability.label}</span><select className="border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 bg-white dark:bg-slate-900" value={capabilityPlacement(capability)} onChange={event => setCapabilityScopeAssignments(current => ({ ...current, [capability.label]: event.target.value }))}>{capabilityScopeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}</div></div></details>}
                   </div>
 
+                  </details>
+
                   {(!primaryMgmt && fleetMode === 'BROWNFIELD') ? (
-                     <div className="bg-white dark:bg-slate-900 p-12 text-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 shadow-sm mt-8"><IconBox className="w-12 h-12 mx-auto mb-4 text-slate-300" /><p>Select a Management Domain cluster from the Discovery Questionnaire.</p></div>
+                     <div className="bg-white dark:bg-slate-900 p-12 text-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 shadow-sm mt-8"><IconBox className="w-12 h-12 mx-auto mb-4 text-slate-300" /><p>Architecture drawings stay available under Architecture overview (optional) and in the Excel design-package export.</p></div>
                   ) : (
                      <div className="animate-in fade-in duration-500 flex flex-col gap-8">
                         
@@ -13557,11 +13451,6 @@ const architectureMath = useMemo(() => {
                                  );
                               })}
                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-12">
-                           <div className="border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm flex flex-col"><h4 className="text-lg font-black text-slate-900 dark:text-slate-100 mb-2">Site Topology & VCF Instances</h4><p className="text-sm leading-relaxed flex-1 text-slate-600 dark:text-slate-300">{dynamicTopologyExplanation}</p></div>
-                           <div className={`border rounded-xl p-6 shadow-sm flex flex-col ${isDedicated ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800' : hldEdgeStrategy === 'NETWORK_REVIEW' ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700'}`}><h4 className={`text-lg font-black mb-2 ${isDedicated || hldEdgeStrategy === 'NETWORK_REVIEW' ? 'text-amber-900 dark:text-amber-200' : 'text-slate-900 dark:text-slate-100'}`}>{['DISTRIBUTED', 'DISTRIBUTED_EVPN', 'PHYSICAL_FABRIC'].includes(hldEdgeStrategy) ? 'Distributed / Fabric Gateway Path' : hldEdgeStrategy === 'NETWORK_REVIEW' ? 'Gateway Decision Needs Review' : isDedicated ? 'Dedicated Edge Placement' : 'Collapsed Edge Placement'}</h4><p className={`text-sm leading-relaxed flex-1 ${isDedicated ? 'text-amber-800 dark:text-amber-300' : 'text-slate-600 dark:text-slate-300'}`}>{dynamicEdgeExplanation}</p></div>
                         </div>
 
                         <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-2xl p-6 shadow-sm mb-12">
