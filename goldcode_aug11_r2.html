@@ -7456,7 +7456,7 @@ const VCFApp = () => {
       const [instanceFleetAssignments, setInstanceFleetAssignments] = useState({});
       const [domainInstanceAssignments, setDomainInstanceAssignments] = useState({});
       const [capabilityScopeAssignments, setCapabilityScopeAssignments] = useState({});
-      const [showDiscovery, setShowDiscovery] = useState(true);
+      const [showDiscovery, setShowDiscovery] = useState(false);
       const [archFocusTarget, setArchFocusTarget] = useState(null);
       const [hldEdgeStrategy, setHldEdgeStrategy] = useState('COLLAPSED_EDGE');
       const [networkingDecision, setNetworkingDecision] = useState({
@@ -7516,7 +7516,9 @@ const VCFApp = () => {
       const [hldIncAI, setHldIncAI] = useState(false);
       const [hldIncDR, setHldIncDR] = useState(false);
       const [hldIncSEC, setHldIncSEC] = useState(false);
-      const [hldIncDsm, setHldIncDsm] = useState(false); // DSM solution-pattern toggle (Avi stays Phase-4 catalog / derivedAvi)
+      const [hldIncDsm, setHldIncDsm] = useState(false); // DSM solution-pattern toggle
+      const [hldIncAvi, setHldIncAvi] = useState(false); // Phase-6 Avi in-scope (can be seeded from Placement)
+      const [hldIncHcx, setHldIncHcx] = useState(false); // Phase-6 HCX in-scope (can be seeded from Placement)
       const [manualVksScope, setManualVksScope] = useState(null);
       const [aviDecision, setAviDecision] = useState({
         scaffold: true,
@@ -8189,7 +8191,7 @@ const VCFApp = () => {
       const checkEnabled = (kw) => Object.keys(sizingSelections).some(k => k.toLowerCase().includes(kw) && sizingSelections[k].enabled);
       const derivedLogs = checkEnabled('log management') || checkEnabled('vcf logs');
       const derivedOpsNet = checkEnabled('operations for networks');
-      const derivedAvi = checkEnabled('avi load balancer') || checkEnabled('avi mgmt');
+      const placementAvi = checkEnabled('avi load balancer') || checkEnabled('avi mgmt');
       const aviCatalogKeys = useMemo(
         () => Object.keys(sizingSelections).filter(k => /avi\s*load\s*balancer/i.test(k) || /avi\s*mgmt/i.test(k)),
         [sizingSelections]
@@ -8202,7 +8204,12 @@ const VCFApp = () => {
       const derivedDepot = checkEnabled('depot');
       
       // NEW: HCX and Backup Derived State Check
-      const derivedHcx = checkEnabled('hcx');
+      const placementHcx = checkEnabled('hcx');
+      // Phase-6 can enable Avi/HCX even if Placement catalog omitted them; Placement seeds the toggles once.
+      useEffect(() => { if (placementAvi) setHldIncAvi(true); }, [placementAvi]);
+      useEffect(() => { if (placementHcx) setHldIncHcx(true); }, [placementHcx]);
+      const derivedAvi = hldIncAvi; // effective Phase-6 / Design ID scope
+      const derivedHcx = hldIncHcx;
 
       // --- NEW: STATEMENT OF WORK (ADR) ENGINE (THE EXECUTIVE 10) ---
       const architecturalDecisionLog = useMemo(() => {
@@ -8529,12 +8536,12 @@ const VCFApp = () => {
           { value: 'STANDARD', label: 'Standard (availabilityModel=SIMPLE)' }, { value: 'HIGH_AVAILABILITY', label: 'High availability (availabilityModel=HA)' }, { value: 'CONTINUOUS', label: 'Continuous availability (availabilityModel=HA)' }
         ] },
         { key: 'hldVpcConnectivityPolicy', label: 'VPC connectivity policy', group: 'Network', when: (ctx) => ctx.networkingModel === 'VPC', options: [
-          { value: 'ISOLATED', label: 'Isolated VPCs' }, { value: 'COMMUNITY', label: 'Community connectivity' }, { value: 'SHARED_SERVICES', label: 'Shared services' }
+          { value: 'NONE', label: 'None' }, { value: 'ISOLATED', label: 'Isolated VPCs' }, { value: 'COMMUNITY', label: 'Community connectivity' }, { value: 'SHARED_SERVICES', label: 'Shared services' }
         ] },
         { key: 'hldStorageTopology', label: 'Primary storage topology', group: 'Storage', options: [
           { value: 'HCI', label: 'Hyperconverged' }, { value: 'DISAGGREGATED', label: 'Disaggregated vSAN' }, { value: 'EXTERNAL', label: 'External storage' }
         ] },
-        { key: 'hldEncryptionScope', label: 'Encryption scope', group: 'Storage', options: [
+        { key: 'hldEncryptionScope', label: 'Storage encryption scope', group: 'Storage', when: (ctx) => ctx.hldStorageTopology !== 'EXTERNAL', options: [
           { value: 'NONE', label: 'None by platform policy' }, { value: 'AT_REST', label: 'At rest' }, { value: 'IN_TRANSIT', label: 'In transit' }, { value: 'BOTH', label: 'At rest and in transit' }
         ] },
         { key: 'hldProtectionModel', label: 'Protection model', group: 'Protection', options: [
@@ -8567,8 +8574,8 @@ const VCFApp = () => {
         { key: 'solSEC', label: 'Security & Ransomware Recovery', group: 'Solutions', kind: 'toggle', triggerKeys: ['hldIncSEC', 'hldSecurityServices'], buckets: ['SEC'], getEnabled: () => !!hldIncSEC, setEnabled: (on) => setHldIncSEC(on) },
         { key: 'solVKS', label: 'vSphere Kubernetes Service', group: 'Solutions', kind: 'toggle', triggerKeys: ['hldIncVKS'], buckets: ['VKS'], getEnabled: () => !!complianceScope.VKS, setEnabled: (on) => { setManualVksScope(on); setComplianceScope(current => ({ ...current, VKS: on })); } },
         { key: 'solDSM', label: 'Data Services Manager', group: 'Solutions', kind: 'toggle', triggerKeys: ['hldIncDsm'], buckets: ['DSM'], getEnabled: () => !!hldIncDsm, setEnabled: (on) => setHldIncDsm(on) },
-        { key: 'solAVI', label: 'Advanced Load Balancing (Avi)', group: 'Solutions', kind: 'inherited', triggerKeys: ['derivedAvi'], buckets: ['AVI'], getEnabled: () => !!derivedAvi },
-        { key: 'solHCX', label: 'Cross-Cloud Mobility (HCX)', group: 'Solutions', kind: 'inherited', triggerKeys: ['derivedHcx'], buckets: ['EDGE', 'NET'], getEnabled: () => !!derivedHcx },
+        { key: 'solAVI', label: 'Advanced Load Balancing (Avi)', group: 'Solutions', kind: 'toggle', triggerKeys: ['derivedAvi'], buckets: ['AVI'], getEnabled: () => !!hldIncAvi, setEnabled: (on) => setHldIncAvi(on), hint: placementAvi ? 'Also selected in Placement Engine' : 'Remember to add Avi in the Placement Engine catalog if Controllers should size there.' },
+        { key: 'solHCX', label: 'Cross-Cloud Mobility (HCX)', group: 'Solutions', kind: 'toggle', triggerKeys: ['derivedHcx'], buckets: ['EDGE', 'NET'], getEnabled: () => !!hldIncHcx, setEnabled: (on) => setHldIncHcx(on), hint: placementHcx ? 'Also selected in Placement Engine' : 'Remember to enable HCX in the Placement Engine if mobility appliances should size there.' },
       ];
 
       const architectExtensionCoverage = useMemo(() => {
@@ -8654,6 +8661,7 @@ const VCFApp = () => {
             status,
             sampleIds: matchingApplicable.slice(0, 4).map(row => row.id || row.ID || row.requirementid).filter(Boolean),
             setEnabled: def.setEnabled,
+            hint: def.hint || '',
           };
         });
 
@@ -8667,7 +8675,7 @@ const VCFApp = () => {
           noActiveMatch: actionable.filter(r => r.status === 'NO_ACTIVE_MATCH'),
           mapped: actionable.filter(r => r.status === 'MAPPED'),
         };
-      }, [vcgData.designIds, vcgData['Design IDs'], vcgData.design_ids, designDecisionContext, activeApplicableDesignIds, hldIncAI, hldIncDR, hldIncSEC, hldIncDsm, complianceScope.VKS, derivedAvi, derivedHcx]);
+      }, [vcgData.designIds, vcgData['Design IDs'], vcgData.design_ids, designDecisionContext, activeApplicableDesignIds, hldIncAI, hldIncDR, hldIncSEC, hldIncDsm, hldIncAvi, hldIncHcx, complianceScope.VKS, placementAvi, placementHcx]);
 
       const ADR_BUCKET_MAP = {
         COMPUTE: ['CORE', 'FLEET'], TOPOLOGY: ['CORE', 'VSAN', 'DR'], NETWORK: ['NET', 'NSX', 'EDGE', 'AVI'],
@@ -10348,6 +10356,11 @@ const architectureMath = useMemo(() => {
         { legacyId: 'VCF-SEC-REQD-CFG-004', canonicalId: 'VCF-SEC-REQD-CFG-004', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Platform security baseline when hldSecurityServices=BASELINE.' },
         { legacyId: 'VCF-BKP-REQD-CFG-003', canonicalId: 'VCF-BKP-REQD-CFG-003', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Workload backup protection model when hldProtectionModel=BACKUP.' },
         { legacyId: 'VCF-BKP-REQD-CFG-004', canonicalId: 'VCF-BKP-REQD-CFG-004', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Local recovery protection model when hldProtectionModel=LOCAL_RECOVERY.' },
+        { legacyId: 'VCF-ID-REQD-CFG-001', canonicalId: 'VCF-ID-REQD-CFG-001', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Three-node Identity Broker HA when hldIdentityMode=THREE_NODE_HA.' },
+        { legacyId: 'VCF-CERT-REQD-CFG-003', canonicalId: 'VCF-CERT-REQD-CFG-003', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'OpenSSL CA when hldCaModel=OPENSSL.' },
+        { legacyId: 'VCF-CERT-REQD-CFG-004', canonicalId: 'VCF-CERT-REQD-CFG-004', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Enterprise PKI when hldCaModel=ENTERPRISE_PKI.' },
+        { legacyId: 'VCF-CLS-REQD-CFG-005', canonicalId: 'VCF-CLS-REQD-CFG-005', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Live patch lifecycle when hldLifecycleStrategy=LIVE_PATCH.' },
+        { legacyId: 'VCF-VPC-REQD-CFG-005', canonicalId: 'VCF-VPC-REQD-CFG-005', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'No VPC connectivity policy when hldVpcConnectivityPolicy=NONE.' },
         { legacyId: 'VCF-AUTO-REQD-CFG-011', canonicalId: 'VCF-AUTO-REQD-CFG-011', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'No placement-governance overlay when hldPlacementGovernance=NONE.' },
         { legacyId: 'VCF-*', canonicalId: 'VCF-*', action: 'IGNORE_UNKNOWN', matchType: 'DEFAULT', notes: 'Unknown Requirement IDs: park in review queue; do not fail the entire push.' },
       ];
@@ -13093,11 +13106,11 @@ const architectureMath = useMemo(() => {
             <div className="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
                <SizerPageToolbar
                   title="Fleet & Compliance"
-                  subtitle="Discovery questionnaire feeds the High-Level Design Builder handoff."
+                  subtitle="Architect decision funnel is the primary Phase-6 control surface — optional left form remains for fleet topology only."
                   showInputs={showDiscovery}
                   onToggleInputs={() => setShowDiscovery(!showDiscovery)}
-                  hideLabel="Hide form"
-                  showLabel="Show form"
+                  hideLabel="Hide fleet form"
+                  showLabel="Show fleet form"
                   actions={(
                     <>
                       <button onClick={downloadMgmtPNG} className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded shadow flex items-center transition whitespace-nowrap shrink-0"><IconCamera /> <span className="ml-2">Export Mgmt Plane</span></button>
@@ -13243,7 +13256,7 @@ const architectureMath = useMemo(() => {
                <div className="flex-1 p-8 overflow-y-auto custom-scrollbar bg-slate-100 dark:bg-slate-800 min-w-0 sizer-results-rail space-y-6">
                   <div>
                      <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">High-Level Design Builder</h2>
-                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">RVTools evidence and source-controlled design requirements translated into an architect-ready handoff.</p>
+                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Use the Architect decision funnel as the primary control surface after RVTools import. Design ID evidence stays secondary.</p>
                   </div>
 
                   <SizerDocsPanel
@@ -13251,11 +13264,11 @@ const architectureMath = useMemo(() => {
                     links={[SIZER_DOCS.vcfDesign, SIZER_DOCS.edgePatterns, SIZER_DOCS.techdocsHome, SIZER_DOCS.vcg]}
                   />
 
-                  <div className="ui-card p-5 mb-6">
-                     <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4">
-                        <div><h3 className="font-black text-slate-900 dark:text-slate-100">Architect decision funnel</h3><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">A small set of explicit architecture choices governs the larger requirement library. Out-of-scope decisions are removed instead of appearing as unanswered work.</p></div>
+                  <details className="ui-card p-5 mb-6" open>
+                     <summary className="cursor-pointer list-none flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4">
+                        <div><h3 className="font-black text-slate-900 dark:text-slate-100">Architect decision funnel</h3><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Primary Phase-6 decision surface after RVTools import — resolve parent decisions and edit solution / extension coverage here.</p></div>
                         {!parentDecisionAudit.legacyMode && <span className={`inline-flex px-3 py-1.5 rounded-full border text-xs font-black ${parentDecisionAudit.unresolved.length ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300' : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300'}`}>{parentDecisionAudit.unresolved.length ? `${parentDecisionAudit.unresolved.length} decision${parentDecisionAudit.unresolved.length === 1 ? '' : 's'} unresolved` : 'Decision set resolved'}</span>}
-                     </div>
+                     </summary>
                      {parentDecisionAudit.legacyMode ? (
                         <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-800 dark:text-amber-300">The configured Google Sheet does not yet contain the new <span className="font-bold">Design Decisions</span> tab. Import the revised workbook tabs to activate the 40-decision funnel; the legacy Design ID filter remains available below.</div>
                      ) : (
@@ -13267,30 +13280,45 @@ const architectureMath = useMemo(() => {
                               <div className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 p-3"><div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">Not applicable</div><div className="text-xl font-black text-slate-900 dark:text-slate-100">{parentDecisionAudit.notApplicable.length}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">removed by active scope</div></div>
                               <div className="rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 p-3"><div className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase">Requirements mapped</div><div className="text-xl font-black text-blue-900 dark:text-blue-200">{parentDecisionAudit.mappedRequirementCount}</div><div className="text-[10px] text-blue-600 dark:text-blue-400">traceable to parent choices</div></div>
                            </div>
-                           {parentDecisionAudit.unresolved.length > 0 && <details className="mt-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40" open><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-amber-900 dark:text-amber-200">Architect discovery queue ({parentDecisionAudit.unresolved.length})</summary><div className="px-3 pb-3 grid grid-cols-1 xl:grid-cols-2 gap-2">{parentDecisionAudit.unresolved.map(item => <div key={item.decisionId} className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-900 p-3"><div className="flex justify-between gap-2"><span className="font-mono text-[10px] font-black text-indigo-700 dark:text-indigo-300">{item.decisionId}</span><span className="text-[9px] font-black text-amber-700 dark:text-amber-300">{item.priority}</span></div><div className="text-xs font-black text-slate-800 dark:text-slate-100 mt-1">{item.decision}</div><div className="text-[10px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">{item.question}</div><div className="text-[9px] text-slate-400 dark:text-slate-500 mt-2">Answer key: {item.contextKey}</div></div>)}</div></details>}
+                           {parentDecisionAudit.unresolved.length > 0 && <details className="mt-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40" open><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-amber-900 dark:text-amber-200">Architect discovery queue ({parentDecisionAudit.unresolved.length})</summary><div className="px-3 pb-3 grid grid-cols-1 xl:grid-cols-2 gap-2">{parentDecisionAudit.unresolved.map(item => {
+                              const isRecovery = item.contextKey === 'hldRecoveryObjectives';
+                              const recoveryPresets = ['RPO ≤15m | RTO ≤1h | Retention 30d','RPO ≤1h | RTO ≤4h | Retention 30d','RPO ≤24h | RTO ≤24h | Retention 14d'];
+                              const recoverySelectValue = architectDecisionInputs.hldRecoveryObjectives === 'UNRESOLVED' ? 'UNRESOLVED' : recoveryPresets.includes(architectDecisionInputs.hldRecoveryObjectives) ? architectDecisionInputs.hldRecoveryObjectives : 'CUSTOM';
+                              const extensionDef = ARCHITECT_EXTENSION_KEYS_.find(def => def.key === item.contextKey);
+                              return (
+                                <div key={item.decisionId} className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-900 p-3">
+                                  <div className="flex justify-between gap-2"><span className="font-mono text-[10px] font-black text-indigo-700 dark:text-indigo-300">{item.decisionId}</span><span className="text-[9px] font-black text-amber-700 dark:text-amber-300">{item.priority}</span></div>
+                                  <div className="text-xs font-black text-slate-800 dark:text-slate-100 mt-1">{item.decision}</div>
+                                  <div className="text-[10px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">{item.question}</div>
+                                  <div className="mt-2">
+                                    {isRecovery ? (
+                                      <div className="space-y-1">
+                                        <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-950" value={recoverySelectValue} onChange={(e) => setArchitectDecisionInput('hldRecoveryObjectives', e.target.value === 'CUSTOM' ? 'Architect-defined recovery objectives' : e.target.value)}>
+                                          <option value="UNRESOLVED">Select an objective…</option>
+                                          <option value="RPO ≤15m | RTO ≤1h | Retention 30d">Mission critical · 15m / 1h / 30d</option>
+                                          <option value="RPO ≤1h | RTO ≤4h | Retention 30d">Business critical · 1h / 4h / 30d</option>
+                                          <option value="RPO ≤24h | RTO ≤24h | Retention 14d">Standard · 24h / 24h / 14d</option>
+                                          <option value="CUSTOM">Architect-defined</option>
+                                        </select>
+                                        {recoverySelectValue === 'CUSTOM' && (
+                                          <input className="w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs bg-white dark:bg-slate-950" value={architectDecisionInputs.hldRecoveryObjectives} onChange={(e) => setArchitectDecisionInput('hldRecoveryObjectives', e.target.value || 'Architect-defined recovery objectives')} placeholder="Example: RPO 30m | RTO 2h | Retention 45d" />
+                                        )}
+                                      </div>
+                                    ) : extensionDef?.options?.length ? (
+                                      <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-950" value={architectDecisionInputs[item.contextKey] ?? ''} onChange={(e) => setArchitectDecisionInput(item.contextKey, e.target.value)}>
+                                        {extensionDef.options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                      </select>
+                                    ) : (
+                                      <div className="text-[9px] text-slate-400 dark:text-slate-500">Answer key: {item.contextKey} — resolve in high-level design coverage below.</div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}</div></details>}
                            <details className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200">View all applicable parent decisions ({parentDecisionAudit.resolved.length + parentDecisionAudit.unresolved.length})</summary><div className="px-3 pb-3 max-h-72 overflow-y-auto divide-y divide-slate-200">{parentDecisionAudit.evaluated.filter(item => item.applicable).map(item => <div key={item.decisionId} className="py-2 grid grid-cols-[105px_1fr] gap-2"><span className="font-mono text-[10px] font-black text-indigo-700 dark:text-indigo-300">{item.decisionId}</span><div><div className="text-xs font-bold text-slate-800 dark:text-slate-100">{item.decision}</div><div className={`text-[10px] mt-0.5 ${item.resolutionStatus === 'UNRESOLVED' ? 'text-amber-700 dark:text-amber-300 font-bold' : 'text-slate-500 dark:text-slate-400'}`}>{item.currentValue.replaceAll('_', ' ')}</div></div></div>)}</div></details>
                         </>
                      )}
-                  </div>
-
-                  <div className="ui-card p-5 mb-6">
-                     <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4">
-                        <div><h3 className="font-black text-slate-900 dark:text-slate-100">Requirement traceability</h3><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Edit solution patterns and architect extensions in the coverage list below. Detailed Design IDs remain the evidence layer — scope and Trigger Criteria decide which rows stay in the handoff.</p></div>
-                        {designIdAudit.reviewItems.length > 0 && <span className="inline-flex px-3 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-xs font-black">{designIdAudit.reviewItems.length} rule{designIdAudit.reviewItems.length === 1 ? '' : 's'} need mapping</span>}
-                     </div>
-                     {designIdAudit.sourceCount === 0 ? (
-                        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-800 dark:text-amber-300">Design ID data is not loaded in this session. Open the deployed Google Sheet version or configure the source sheet before treating the handoff as complete.</div>
-                     ) : (
-                        <>
-                           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                              <div className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 p-3"><div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">Source</div><div className="text-xl font-black text-slate-900 dark:text-slate-100">{designIdAudit.sourceCount}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">workbook Design IDs</div></div>
-                              <div className="rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 p-3"><div className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase">In scope</div><div className="text-xl font-black text-blue-900 dark:text-blue-200">{designIdAudit.inScopeCount}</div><div className="text-[10px] text-blue-600 dark:text-blue-400">active capability buckets</div></div>
-                              <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-3"><div className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase">Visible matches</div><div className="text-xl font-black text-emerald-900 dark:text-emerald-200">{designIdAudit.applicableCount}</div><div className="text-[10px] text-emerald-600 dark:text-emerald-400">after trigger and display filters</div></div>
-                              <div className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 p-3"><div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">Always-on rows</div><div className="text-xl font-black text-slate-900 dark:text-slate-100">{designIdAudit.baselineCount}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">within active buckets</div></div>
-                              <div className={`rounded-lg border p-3 ${designIdAudit.reviewItems.length ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700' : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800'}`}><div className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-300">Architect review</div><div className="text-xl font-black text-slate-900 dark:text-slate-100">{designIdAudit.reviewItems.length}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">unknown or placeholder triggers</div></div>
-                           </div>
-                           {designIdAudit.reviewItems.length > 0 && <details className="mt-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-amber-900 dark:text-amber-200">Show rules that cannot yet be collapsed safely</summary><div className="px-3 pb-3 space-y-2 max-h-44 overflow-y-auto">{designIdAudit.reviewItems.map((item, idx) => <div key={idx} className="text-[10px] text-amber-900 dark:text-amber-200"><span className="font-mono font-black">{item.id || item.ID}</span> · {item.title || item.Title}<div className="text-amber-700 dark:text-amber-300">{item.triggerCriteria} — {item.ruleError}</div></div>)}</div></details>}
-                           <div className={`mt-3 rounded-lg border ${(architectExtensionCoverage.unmapped.length + architectExtensionCoverage.noActiveMatch.length) ? 'border-amber-300 dark:border-amber-700 bg-amber-50/80 dark:bg-amber-950/30' : 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-950/30'}`}>
+<div className={`mt-3 rounded-lg border ${(architectExtensionCoverage.unmapped.length + architectExtensionCoverage.noActiveMatch.length) ? 'border-amber-300 dark:border-amber-700 bg-amber-50/80 dark:bg-amber-950/30' : 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-950/30'}`}>
                               <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                  <div>
                                    <div className="text-xs font-black text-slate-800 dark:text-slate-100">High-level design coverage</div>
@@ -13312,8 +13340,10 @@ const architectureMath = useMemo(() => {
                                    const onExtensionChange = (value) => {
                                      if (row.key === 'hldStorageTopology') {
                                        setArchitectDecisionInput('hldStorageTopology', value);
-                                       if (value === 'EXTERNAL') setHldStorageProto('EXTERNAL');
-                                       else if (hldStorageProto === 'EXTERNAL') setHldStorageProto('VSAN_ESA');
+                                       if (value === 'EXTERNAL') {
+                                         setHldStorageProto('EXTERNAL');
+                                         setArchitectDecisionInput('hldEncryptionScope', 'NONE');
+                                       } else if (hldStorageProto === 'EXTERNAL') setHldStorageProto('VSAN_ESA');
                                        return;
                                      }
                                      if (row.key === 'hldProtectionModel') {
@@ -13339,11 +13369,11 @@ const architectureMath = useMemo(() => {
                                          </div>
                                          <div className="text-xs font-bold text-slate-800 dark:text-slate-100 mt-1">{row.label} <span className="font-mono text-[9px] text-slate-400 dark:text-slate-500">{row.key}</span></div>
                                          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">catalog={row.catalogHitCount} · active={row.activeHitCount}{row.sampleIds?.length ? ` · ${row.sampleIds.join(', ')}` : ''}</div>
-                                         {row.kind === 'solution' && row.inherited && !row.enabled && (
-                                           <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Inherited from Placement Engine — enable there to bring this pattern into scope.</div>
+                                         {row.hint && (
+                                           <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">{row.hint}</div>
                                          )}
-                                         {row.key === 'solAVI' && !derivedAvi && (
-                                           <button type="button" className="text-[10px] font-bold text-blue-700 dark:text-blue-300 mt-1 hover:underline" onClick={() => { setShowArchSidebar(true); setActiveModule('ARCHITECTURE'); window.setTimeout(() => document.getElementById('arch-avi-sizing')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120); }}>Open Placement Engine →</button>
+                                         {(row.key === 'solAVI' || row.key === 'solHCX') && (
+                                           <button type="button" className="text-[10px] font-bold text-blue-700 dark:text-blue-300 mt-1 hover:underline" onClick={() => { setShowArchSidebar(true); setActiveModule('ARCHITECTURE'); window.setTimeout(() => document.getElementById(row.key === 'solAVI' ? 'arch-avi-sizing' : 'arch-hcx-sizing')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120); }}>Open Placement Engine →</button>
                                          )}
                                        </div>
                                        <div className="min-w-0">
@@ -13352,9 +13382,6 @@ const architectureMath = useMemo(() => {
                                              <input type="checkbox" className="w-4 h-4 text-blue-600 dark:text-blue-400 rounded" checked={!!row.enabled} onChange={(e) => row.setEnabled?.(e.target.checked)} />
                                              {row.enabled ? 'In scope' : 'Not in scope'}
                                            </label>
-                                         )}
-                                         {row.kind === 'solution' && row.inherited && (
-                                           <div className={`text-xs font-bold rounded px-2 py-1.5 border ${row.enabled ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'}`}>{row.enabled ? 'Selected in Phase 4' : 'Not selected'}</div>
                                          )}
                                          {row.kind === 'extension' && row.control === 'recoveryObjectives' && (
                                            <div>
@@ -13384,9 +13411,28 @@ const architectureMath = useMemo(() => {
                                  })}
                               </div>
                            </div>
+                  </details>
+
+                  <details className="ui-card p-5 mb-6">
+                     <summary className="cursor-pointer list-none flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4">
+                        <div><h3 className="font-black text-slate-900 dark:text-slate-100">Design ID evidence</h3><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Secondary evidence layer — workbook Design ID counts after scope and Trigger Criteria filters. Decisions are made in the funnel above.</p></div>
+                        {designIdAudit.reviewItems.length > 0 && <span className="inline-flex px-3 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-xs font-black">{designIdAudit.reviewItems.length} rule{designIdAudit.reviewItems.length === 1 ? '' : 's'} need mapping</span>}
+                     </summary>
+                     {designIdAudit.sourceCount === 0 ? (
+                        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-800 dark:text-amber-300">Design ID data is not loaded in this session. Open the deployed Google Sheet version or configure the source sheet before treating the handoff as complete.</div>
+                     ) : (
+                        <>
+                           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                              <div className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 p-3"><div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">Source</div><div className="text-xl font-black text-slate-900 dark:text-slate-100">{designIdAudit.sourceCount}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">workbook Design IDs</div></div>
+                              <div className="rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 p-3"><div className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase">In scope</div><div className="text-xl font-black text-blue-900 dark:text-blue-200">{designIdAudit.inScopeCount}</div><div className="text-[10px] text-blue-600 dark:text-blue-400">active capability buckets</div></div>
+                              <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-3"><div className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase">Visible matches</div><div className="text-xl font-black text-emerald-900 dark:text-emerald-200">{designIdAudit.applicableCount}</div><div className="text-[10px] text-emerald-600 dark:text-emerald-400">after trigger and display filters</div></div>
+                              <div className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 p-3"><div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">Always-on rows</div><div className="text-xl font-black text-slate-900 dark:text-slate-100">{designIdAudit.baselineCount}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">within active buckets</div></div>
+                              <div className={`rounded-lg border p-3 ${designIdAudit.reviewItems.length ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700' : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800'}`}><div className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-300">Architect review</div><div className="text-xl font-black text-slate-900 dark:text-slate-100">{designIdAudit.reviewItems.length}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">unknown or placeholder triggers</div></div>
+                           </div>
+                           {designIdAudit.reviewItems.length > 0 && <details className="mt-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-amber-900 dark:text-amber-200">Show rules that cannot yet be collapsed safely</summary><div className="px-3 pb-3 space-y-2 max-h-44 overflow-y-auto">{designIdAudit.reviewItems.map((item, idx) => <div key={idx} className="text-[10px] text-amber-900 dark:text-amber-200"><span className="font-mono font-black">{item.id || item.ID}</span> · {item.title || item.Title}<div className="text-amber-700 dark:text-amber-300">{item.triggerCriteria} — {item.ruleError}</div></div>)}</div></details>}
                         </>
                      )}
-                  </div>
+                  </details>
 
                   <div className="grid grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
                      <div className="ui-card p-4"><div className="text-xs font-bold text-slate-500 dark:text-slate-400">VCF instances</div><div className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{Math.max(1, mgmtDomains.length)}</div><div className="text-[10px] text-slate-400 dark:text-slate-500">management/control planes</div></div>
