@@ -8209,6 +8209,15 @@ const VCFApp = () => {
       const derivedAvi = hldIncAvi; // effective Phase-6 / Design ID scope
       const derivedHcx = hldIncHcx;
 
+      const RECOVERY_OBJECTIVE_LABELS_ = {
+        MISSION_CRITICAL: 'RPO ≤15m | RTO ≤1h | Retention 30d',
+        BUSINESS_CRITICAL: 'RPO ≤1h | RTO ≤4h | Retention 30d',
+        STANDARD_OBJ: 'RPO ≤24h | RTO ≤24h | Retention 14d',
+        CUSTOM: 'Architect-defined recovery objectives',
+        UNRESOLVED: 'UNRESOLVED'
+      };
+      const recoveryObjectiveLabel_ = (value) => RECOVERY_OBJECTIVE_LABELS_[value] || value || 'UNRESOLVED';
+
       // --- NEW: STATEMENT OF WORK (ADR) ENGINE (THE EXECUTIVE 10) ---
       const architecturalDecisionLog = useMemo(() => {
           const log = [];
@@ -8524,15 +8533,6 @@ const VCFApp = () => {
           legacyMode: catalog.length === 0
         };
       }, [vcgData.designDecisions, vcgData['Design Decisions'], vcgData.designIds, vcgData['Design IDs'], vcgData.design_ids, designDecisionContext, hldIncAI, derivedAuto, complianceScope.VKS, activeEdgePatternNums, derivedHcx, hldStorageProto, architectDecisionInputs.hldStorageTopology, networkingDecision.networkingModel]);
-
-      const RECOVERY_OBJECTIVE_LABELS_ = {
-        MISSION_CRITICAL: 'RPO ≤15m | RTO ≤1h | Retention 30d',
-        BUSINESS_CRITICAL: 'RPO ≤1h | RTO ≤4h | Retention 30d',
-        STANDARD_OBJ: 'RPO ≤24h | RTO ≤24h | Retention 14d',
-        CUSTOM: 'Architect-defined recovery objectives',
-        UNRESOLVED: 'UNRESOLVED'
-      };
-      const recoveryObjectiveLabel_ = (value) => RECOVERY_OBJECTIVE_LABELS_[value] || value || 'UNRESOLVED';
 
       /** Phase 6 Architect decision-extension keys that must map to Design ID Trigger Criteria for export. */
       const ARCHITECT_EXTENSION_KEYS_ = [
@@ -13170,37 +13170,27 @@ const architectureMath = useMemo(() => {
                               <div className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 p-3"><div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">Not applicable</div><div className="text-xl font-black text-slate-900 dark:text-slate-100">{parentDecisionAudit.notApplicable.length}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">removed by active scope</div></div>
                               <div className="rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 p-3"><div className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase">Requirements mapped</div><div className="text-xl font-black text-blue-900 dark:text-blue-200">{parentDecisionAudit.mappedRequirementCount}</div><div className="text-[10px] text-blue-600 dark:text-blue-400">traceable to parent choices</div></div>
                            </div>
-                           {parentDecisionAudit.unresolved.length > 0 && <details className="mt-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40" open><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-amber-900 dark:text-amber-200">Architect discovery queue ({parentDecisionAudit.unresolved.length})</summary><div className="px-3 pb-3 grid grid-cols-1 xl:grid-cols-2 gap-2">{parentDecisionAudit.unresolved.map(item => {
-                              const isRecovery = item.contextKey === 'hldRecoveryObjectives';
-                              const recoverySelectValue = ['UNRESOLVED','MISSION_CRITICAL','BUSINESS_CRITICAL','STANDARD_OBJ','CUSTOM'].includes(architectDecisionInputs.hldRecoveryObjectives) ? architectDecisionInputs.hldRecoveryObjectives : (architectDecisionInputs.hldRecoveryObjectives ? 'CUSTOM' : 'UNRESOLVED');
-                              const extensionDef = ARCHITECT_EXTENSION_KEYS_.find(def => def.key === item.contextKey);
+                           {(() => {
+                              const extensionKeySet = new Set(ARCHITECT_EXTENSION_KEYS_.map(def => def.key));
+                              // Extension-backed decisions (e.g. DEC-PROT-002 / hldRecoveryObjectives) are answered once in coverage below.
+                              const queueItems = parentDecisionAudit.unresolved.filter(item => !extensionKeySet.has(item.contextKey));
+                              if (queueItems.length === 0) return null;
                               return (
-                                <div key={item.decisionId} className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-900 p-3">
-                                  <div className="flex justify-between gap-2"><span className="font-mono text-[10px] font-black text-indigo-700 dark:text-indigo-300">{item.decisionId}</span><span className="text-[9px] font-black text-amber-700 dark:text-amber-300">{item.priority}</span></div>
-                                  <div className="text-xs font-black text-slate-800 dark:text-slate-100 mt-1">{item.decision}</div>
-                                  <div className="text-[10px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">{item.question}</div>
-                                  <div className="mt-2">
-                                    {isRecovery ? (
-                                      <div className="space-y-1">
-                                        <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-950" value={recoverySelectValue} onChange={(e) => setArchitectDecisionInput('hldRecoveryObjectives', e.target.value)}>
-                                          <option value="UNRESOLVED">Select an objective…</option>
-                                          <option value="MISSION_CRITICAL">Mission critical · 15m / 1h / 30d</option>
-                                          <option value="BUSINESS_CRITICAL">Business critical · 1h / 4h / 30d</option>
-                                          <option value="STANDARD_OBJ">Standard · 24h / 24h / 14d</option>
-                                          <option value="CUSTOM">Architect-defined</option>
-                                        </select>
+                                <details className="mt-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40" open>
+                                  <summary className="cursor-pointer px-3 py-2 text-xs font-bold text-amber-900 dark:text-amber-200">Architect discovery queue ({queueItems.length})</summary>
+                                  <div className="px-3 pb-3 grid grid-cols-1 xl:grid-cols-2 gap-2">
+                                    {queueItems.map(item => (
+                                      <div key={item.decisionId} className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-900 p-3">
+                                        <div className="flex justify-between gap-2"><span className="font-mono text-[10px] font-black text-indigo-700 dark:text-indigo-300">{item.decisionId}</span><span className="text-[9px] font-black text-amber-700 dark:text-amber-300">{item.priority}</span></div>
+                                        <div className="text-xs font-black text-slate-800 dark:text-slate-100 mt-1">{item.decision}</div>
+                                        <div className="text-[10px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">{item.question}</div>
+                                        <div className="text-[9px] text-slate-400 dark:text-slate-500 mt-2">Answer key: {item.contextKey}</div>
                                       </div>
-                                    ) : extensionDef?.options?.length ? (
-                                      <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-950" value={architectDecisionInputs[item.contextKey] ?? ''} onChange={(e) => setArchitectDecisionInput(item.contextKey, e.target.value)}>
-                                        {extensionDef.options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                                      </select>
-                                    ) : (
-                                      <div className="text-[9px] text-slate-400 dark:text-slate-500">Answer key: {item.contextKey} — resolve in high-level design coverage below.</div>
-                                    )}
+                                    ))}
                                   </div>
-                                </div>
+                                </details>
                               );
-                            })}</div></details>}
+                            })()}
                            <details className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200">View all applicable parent decisions ({parentDecisionAudit.resolved.length + parentDecisionAudit.unresolved.length})</summary><div className="px-3 pb-3 max-h-72 overflow-y-auto divide-y divide-slate-200">{parentDecisionAudit.evaluated.filter(item => item.applicable).map(item => <div key={item.decisionId} className="py-2 grid grid-cols-[105px_1fr] gap-2"><span className="font-mono text-[10px] font-black text-indigo-700 dark:text-indigo-300">{item.decisionId}</span><div><div className="text-xs font-bold text-slate-800 dark:text-slate-100">{item.decision}</div><div className={`text-[10px] mt-0.5 ${item.resolutionStatus === 'UNRESOLVED' ? 'text-amber-700 dark:text-amber-300 font-bold' : 'text-slate-500 dark:text-slate-400'}`}>{item.currentValue.replaceAll('_', ' ')}</div></div></div>)}</div></details>
                         </>
                      )}
