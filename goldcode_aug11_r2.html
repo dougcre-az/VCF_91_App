@@ -7750,7 +7750,7 @@ const VCFApp = () => {
 
       const [complianceScope, setComplianceScope] = useState({
         CORE: true, FLEET: true, NET: true, NSX: true, OPS: true, LIC: true, COST: true,
-        EDGE: false, VSAN: true, AUTO: false, VKS: false, AI: false, DR: false, SEC: false, AVI: false, DSM: false
+        EDGE: false, VSAN: true, AUTO: false, VKS: false, AI: false, DR: false, SEC: false, AVI: false, DSM: false, HCX: false
       });
 
       const [matrixViewMode, setMatrixViewMode] = useState('ADR'); // NEW: Toggles between SoW Decisions and VVD IDs
@@ -8455,6 +8455,7 @@ const VCFApp = () => {
           if (bucket === 'AI' && !hldIncAI) return false;
           if (bucket === 'AVI' && !derivedAvi) return false;
           if (bucket === 'DSM' && !hldIncDsm) return false;
+          if (bucket === 'HCX' && !derivedHcx) return false;
 
           // Per-ID Tier 2 logic, driven entirely by the sheet's Trigger Criteria column
           const triggerCriteria = item['Trigger Criteria'] || item.triggerCriteria || item['trigger criteria'];
@@ -8625,7 +8626,7 @@ const VCFApp = () => {
         { key: 'solVKS', label: 'vSphere Kubernetes Service', group: 'Solutions', kind: 'toggle', triggerKeys: ['hldIncVKS'], buckets: ['VKS'], getEnabled: () => !!complianceScope.VKS, setEnabled: (on) => { setManualVksScope(on); setComplianceScope(current => ({ ...current, VKS: on })); } },
         { key: 'solDSM', label: 'Data Services Manager', group: 'Solutions', kind: 'select', contextKey: 'hldDsmScope', options: SOLUTION_SCOPE_OPTIONS_.hldDsmScope, triggerKeys: ['hldIncDsm', 'hldDsmScope'], buckets: ['DSM'], getValue: () => hldDsmScope, setValue: (value) => setArchitectDecisionInput('hldDsmScope', value), hint: 'Set scope here — DSM is not sized in the Placement Engine.' },
         { key: 'solAVI', label: 'Advanced Load Balancing (Avi)', group: 'Solutions', kind: 'select', contextKey: 'hldAviScope', options: SOLUTION_SCOPE_OPTIONS_.hldAviScope, triggerKeys: ['derivedAvi', 'hldAviScope', 'hldIncAvi'], buckets: ['AVI'], getValue: () => hldAviScope, setValue: (value) => setArchitectDecisionInput('hldAviScope', value), hint: 'Set scope here — optional Avi Configurator refines SE tier / HA footprint.' },
-        { key: 'solHCX', label: 'Cross-Cloud Mobility (HCX)', group: 'Solutions', kind: 'select', contextKey: 'hldHcxScope', options: SOLUTION_SCOPE_OPTIONS_.hldHcxScope, triggerKeys: ['derivedHcx', 'hldHcxScope', 'hldIncHcx'], buckets: ['CORE'], getValue: () => hldHcxScope, setValue: (value) => setArchitectDecisionInput('hldHcxScope', value), hint: 'Set scope here — HCX is not in the Placement Engine catalog.' },
+        { key: 'solHCX', label: 'Cross-Cloud Mobility (HCX)', group: 'Solutions', kind: 'select', contextKey: 'hldHcxScope', options: SOLUTION_SCOPE_OPTIONS_.hldHcxScope, triggerKeys: ['derivedHcx', 'hldHcxScope', 'hldIncHcx'], buckets: ['HCX'], getValue: () => hldHcxScope, setValue: (value) => setArchitectDecisionInput('hldHcxScope', value), hint: 'Set scope here — HCX is not in the Placement Engine catalog.' },
       ];
 
       const architectExtensionCoverage = useMemo(() => {
@@ -8690,8 +8691,10 @@ const VCFApp = () => {
             const bucket = String(row.bucket || row.Bucket || '').toUpperCase();
             const keyHit = keys.some(k => tc.includes(k));
             const bucketHit = bucketSet.has(bucket);
+            if (!enabled) return false;
             if (!keyHit && !bucketHit) return false;
-            if (keyHit && !evaluateTriggerCriteria(tc, designDecisionContext)) return false;
+            // Always evaluate Trigger Criteria so bucket-only hits (e.g. HCX/AVI/DSM) respect scope dropdowns
+            if (!evaluateTriggerCriteria(tc, designDecisionContext)) return false;
             return true;
           });
           let status = 'OFF';
@@ -8737,7 +8740,7 @@ const VCFApp = () => {
 
       const ADR_BUCKET_MAP = {
         COMPUTE: ['CORE', 'FLEET'], TOPOLOGY: ['CORE', 'VSAN', 'DR'], NETWORK: ['NET', 'NSX', 'EDGE', 'AVI'],
-        STORAGE: ['VSAN'], SECURITY: ['SEC', 'NSX'], 'OPS/ADV': ['OPS', 'AUTO'], SOLUTIONS: ['AI', 'DR', 'SEC', 'VKS', 'AUTO', 'DSM', 'AVI'], EDGE: ['EDGE'],
+        STORAGE: ['VSAN'], SECURITY: ['SEC', 'NSX'], 'OPS/ADV': ['OPS', 'AUTO'], SOLUTIONS: ['AI', 'DR', 'SEC', 'VKS', 'AUTO', 'DSM', 'AVI', 'HCX'], EDGE: ['EDGE'],
         FLEET: ['FLEET', 'CORE', 'OPS'], RESILIENCE: ['DR', 'VSAN', 'CORE'], KUBERNETES: ['VKS']
       };
       const mappedDesignIdsForAdr = (adr) => activeApplicableDesignIds.filter(req => (ADR_BUCKET_MAP[adr.bucket] || []).includes(String(req.bucket || req.Bucket || '').toUpperCase()));
@@ -8776,9 +8779,10 @@ const VCFApp = () => {
               DR: hldIncDR,
               SEC: hldIncSEC,
               AVI: derivedAvi,
-              DSM: hldIncDsm
+              DSM: hldIncDsm,
+              HCX: derivedHcx
           });
-      }, [rawRvData, hldStorageProto, gfStorageType, derivedAuto, derivedAvi, hldEdgeStrategy, archSelectedCluster, fleetMgmtCluster, siteProfiles, hldIncAI, hldIncDR, hldIncSEC, hldIncDsm, manualVksScope]);
+      }, [rawRvData, hldStorageProto, gfStorageType, derivedAuto, derivedAvi, derivedHcx, hldEdgeStrategy, archSelectedCluster, fleetMgmtCluster, siteProfiles, hldIncAI, hldIncDR, hldIncSEC, hldIncDsm, manualVksScope]);
         
       const handleFileUpload = async (event) => {
         const files = Array.from(event.target.files);
