@@ -1,0 +1,457 @@
+/* Tailwind is compiled locally by PostCSS during vite build / vite dev.
+   Only utilities referenced in index.html and src are emitted. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    .has-tooltip:hover .tooltip { display: block; z-index: 50; }
+    .sizer-info-portal {
+      position: fixed;
+      z-index: 10000;
+      max-width: min(20rem, calc(100vw - 1.5rem));
+      border-radius: 0.75rem;
+      border: 1px solid #475569;
+      background: #020617;
+      color: #e2e8f0;
+      padding: 0.75rem 0.875rem;
+      font-size: 0.6875rem;
+      line-height: 1.45;
+      font-weight: 500;
+      text-transform: none;
+      letter-spacing: normal;
+      box-shadow: 0 18px 40px rgba(2, 6, 23, 0.45);
+      pointer-events: auto;
+    }
+    .app-light .sizer-info-portal {
+      background: #0f172a;
+      border-color: #334155;
+      color: #f8fafc;
+    }
+    .sizer-inputs-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-radius: 0.5rem;
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      color: #334155;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .sizer-inputs-toggle:hover { border-color: #60a5fa; color: #1e3a8a; }
+    .app-dark .sizer-inputs-toggle {
+      background: #152238;
+      border-color: #38506f;
+      color: #dbe7f5;
+    }
+    .app-dark .sizer-inputs-toggle:hover { border-color: #60a5fa; color: #ffffff; }
+
+    /* Competitive hook cards — keep lead text readable in both themes */
+    .app-dark .text-indigo-900, .app-dark .text-indigo-950 { color: #c7d2fe !important; }
+    .app-dark .text-cyan-900, .app-dark .text-cyan-950 { color: #a5f3fc !important; }
+    .app-dark .text-rose-900, .app-dark .text-rose-950 { color: #fecdd3 !important; }
+    .app-dark .text-emerald-900 { color: #a7f3d0 !important; }
+    .app-dark .text-amber-900, .app-dark .text-amber-950 { color: #fde68a !important; }
+    .app-dark .text-teal-200, .app-dark .text-teal-300 { color: #5eead4 !important; }
+    .app-dark .text-emerald-200, .app-dark .text-emerald-300 { color: #6ee7b7 !important; }
+    .app-dark .text-amber-200, .app-dark .text-amber-300 { color: #fcd34d !important; }
+    .app-dark .bg-indigo-50\/70, .app-dark [class~="bg-indigo-50/70"] { background-color: rgba(99,102,241,.12) !important; }
+    .app-dark .bg-cyan-50\/70, .app-dark [class~="bg-cyan-50/70"] { background-color: rgba(6,182,212,.12) !important; }
+    .app-dark .bg-rose-50\/70, .app-dark [class~="bg-rose-50/70"] { background-color: rgba(244,63,94,.12) !important; }
+    .app-dark .bg-sky-50\/70, .app-dark [class~="bg-sky-50/70"] { background-color: rgba(14,165,233,.12) !important; }
+    .app-dark .text-sky-900 { color: #bae6fd !important; }
+    .app-dark .bg-amber-50\/80, .app-dark [class~="bg-amber-50/80"] { background-color: rgba(245,158,11,.14) !important; }
+    .app-dark .competitive-hook-panel { background: #152238; border-color: #3d5a80; }
+    .app-dark .competitive-hook-panel .competitive-hook-summary { color: #d7e3f4 !important; }
+    .app-dark .competitive-hook-panel .text-slate-500 { color: #94a3b8 !important; }
+    .app-dark .competitive-hook-panel .text-slate-600 { color: #cbd5e1 !important; }
+    .app-dark .competitive-hook-panel .text-slate-700 { color: #e2e8f0 !important; }
+    .app-dark .competitive-hook-lens label { color: #cbd5e1 !important; }
+    .app-dark .competitive-hook-lens select {
+      background: #0f1b2d !important;
+      color: #e2e8f0 !important;
+      border-color: #475569 !important;
+    }
+    .app-light .competitive-hook-panel {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+    .app-light .competitive-hook-panel .competitive-hook-summary { color: #334155 !important; }
+    .compare-card-pro {
+      background: #ffffff;
+      border: 1px solid #bbf7d0;
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+    }
+    .compare-card-con {
+      background: #fffbeb;
+      border: 1px solid #fcd34d;
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+    }
+    .app-dark .compare-card-pro {
+      background: #0f291e;
+      border-color: #166534;
+    }
+    .app-dark .compare-card-con {
+      background: #2a2110;
+      border-color: #a16207;
+    }
+    .app-dark .compare-card-pro ul,
+    .app-dark .compare-card-con ul,
+    .app-dark .compare-card-pro li,
+    .app-dark .compare-card-con li { color: #e2e8f0 !important; }
+    .app-dark .compare-card-pro .text-emerald-700 { color: #6ee7b7 !important; }
+    .app-dark .compare-card-con .text-amber-800 { color: #fcd34d !important; }
+    .app-dark .dsm-diy-panel {
+      background: #152238 !important;
+      border-color: #3d5a80 !important;
+    }
+    .app-dark .dsm-diy-panel .text-indigo-800,
+    .app-dark .dsm-diy-panel .text-indigo-950 { color: #c7d2fe !important; }
+    .app-dark .dsm-diy-panel > p { color: #e2e8f0 !important; }
+
+    /* Specialist-sizer tokens (live under .friendly-sizer; former .sizer-theme removed) */
+    .friendly-sizer {
+      --st-text-dim: #64748b;
+      --st-green: #10b981;
+      --st-red: #ef4444;
+      --st-amber: #f59e0b;
+      background: transparent;
+      color: inherit;
+    }
+    .app-dark .friendly-sizer {
+      --st-text-dim: #94a3b8;
+    }
+    .st-panel {
+      background: #ffffff;
+      border: 1px solid #dbe4f0;
+      border-radius: 0.5rem;
+    }
+    .app-dark .st-panel {
+      background: #152238;
+      border-color: #263852;
+    }
+    .st-mono {
+      font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    .st-label {
+      font-size: 0.6875rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-transform: none;
+      color: var(--st-text-dim, #64748b);
+    }
+    .st-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.125rem 0.625rem;
+      border-radius: 9999px;
+      font-size: 0.625rem;
+      font-weight: 800;
+      text-transform: none;
+      letter-spacing: 0.02em;
+    }
+    .st-badge-ok { background: rgba(16,185,129,0.15); color: var(--st-green, #10b981); }
+    .st-badge-warn { background: rgba(245,158,11,0.15); color: var(--st-amber, #f59e0b); }
+    .st-badge-hot { background: rgba(239,68,68,0.15); color: var(--st-red, #ef4444); }
+    .friendly-sizer .uppercase {
+      text-transform: none !important;
+      letter-spacing: 0.02em !important;
+    }
+    .friendly-sizer .sizer-results-rail {
+      background: #f8fafc;
+    }
+    .app-dark .friendly-sizer .sizer-results-rail {
+      background: #0b1220;
+    }
+    .sizer-results-sticky {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      margin: -0.5rem -0.5rem 0;
+      padding: 0.5rem;
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      border-bottom: 1px solid #e2e8f0;
+      background: rgba(248, 250, 252, 0.95);
+    }
+    .sizer-results-sticky > :first-child {
+      flex: 1 1 12rem;
+      min-width: 0;
+    }
+    .sizer-results-sticky > :last-child {
+      flex: 0 1 auto;
+      margin-left: auto;
+    }
+    .app-dark .sizer-results-sticky {
+      border-bottom-color: #263852;
+      background: rgba(11, 18, 32, 0.95);
+    }
+    .sizer-page-toolbar {
+      flex-shrink: 0;
+      z-index: 50;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.625rem 1rem;
+      border-bottom: 1px solid #e2e8f0;
+      background: #ffffff;
+    }
+    .sizer-page-toolbar > :first-child {
+      flex: 1 1 12rem;
+      min-width: 0;
+    }
+    .sizer-page-toolbar > :last-child {
+      flex: 0 1 auto;
+      margin-left: auto;
+    }
+    .app-dark .sizer-page-toolbar {
+      border-bottom-color: #263852;
+      background: #0f1b2d;
+    }
+    .sizer-doc-link {
+      color: #1d4ed8;
+      font-weight: 700;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .sizer-doc-link:hover { color: #1e40af; }
+    .app-dark .sizer-doc-link { color: #93c5fd; }
+    .app-dark .sizer-doc-link:hover { color: #bfdbfe; }
+    .capacity-flow-segment {
+      min-width: 2px;
+      transition: width .3s ease;
+      color: #0f172a;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 2px;
+      box-sizing: border-box;
+    }
+    .topology-connector { height: 2px; min-width: 28px; background: linear-gradient(90deg,#94a3b8,#3b82f6); position: relative; }
+    .topology-connector::after { content: ''; position: absolute; right: -1px; top: -3px; border-left: 6px solid #3b82f6; border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+    .ui-card { background: white; border: 1px solid #dbe4f0; border-radius: 0.875rem; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+    .ui-card:hover { border-color: #bfdbfe; box-shadow: 0 8px 20px rgba(15,23,42,.06); }
+
+    /* Unified application theme. The sidebar remains a stable dark navigation rail in both modes. */
+    .app-shell { background: #f8fafc; color: #1e293b; transition: background-color .2s ease, color .2s ease; }
+    /* THEME BRIDGE: Prefer Tailwind dark:* on new/shell UI (requires dark class + darkMode:'class').
+       Legacy .app-dark { utility } !important overrides below remain for unmigrated specialist sizers.
+       Do not expand the override sheet for new components — colocate dark: variants instead. */
+    .app-shell input, .app-shell select, .app-shell button { transition: border-color .15s ease, background-color .15s ease, color .15s ease, box-shadow .15s ease; }
+    .app-shell input:focus, .app-shell select:focus { outline: none; border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59,130,246,.14); }
+    .app-shell .theme-toggle { background: #f1f5f9; border: 1px solid #dbe4f0; color: #475569; }
+    .app-shell .theme-toggle:hover { background: #e2e8f0; color: #0f172a; }
+
+    .app-dark { color-scheme: dark; background: #07111f; color: #dbe7f5; }
+    .app-dark .bg-white { background-color: #0f1b2d !important; }
+    .app-dark .bg-slate-50 { background-color: #07111f !important; }
+    .app-dark .bg-slate-100 { background-color: #152238 !important; }
+    .app-dark .bg-slate-200 { background-color: #23334d !important; }
+    .app-dark .text-slate-900, .app-dark .text-slate-800, .app-dark .text-gray-900, .app-dark .text-gray-800 { color: #f1f5f9 !important; }
+    .app-dark .text-slate-700, .app-dark .text-gray-700 { color: #dbe7f5 !important; }
+    .app-dark .text-slate-600 { color: #b3c2d6 !important; }
+    .app-dark .text-slate-500, .app-dark .text-gray-500 { color: #8fa1b8 !important; }
+    .app-dark .text-slate-400 { color: #8193aa !important; }
+    .app-dark .border-slate-100, .app-dark .border-slate-200, .app-dark .border-gray-200 { border-color: #263852 !important; }
+    .app-dark .border-slate-300, .app-dark .border-gray-300 { border-color: #38506f !important; }
+    .app-dark input, .app-dark select, .app-dark textarea { background-color: #0b1627 !important; color: #e5edf8 !important; border-color: #38506f !important; }
+    .app-dark input::placeholder, .app-dark textarea::placeholder { color: #71839c !important; }
+    .app-dark .bg-blue-50 { background-color: rgba(37,99,235,.14) !important; }
+    .app-dark .bg-emerald-50 { background-color: rgba(5,150,105,.14) !important; }
+    .app-dark .bg-amber-50 { background-color: rgba(217,119,6,.14) !important; }
+    .app-dark .bg-red-50, .app-dark .bg-rose-50 { background-color: rgba(225,29,72,.13) !important; }
+    .app-dark .bg-violet-50, .app-dark .bg-indigo-50 { background-color: rgba(99,102,241,.14) !important; }
+    .app-dark .text-blue-700, .app-dark .text-blue-800 { color: #93c5fd !important; }
+    .app-dark .text-emerald-700, .app-dark .text-emerald-800 { color: #6ee7b7 !important; }
+    .app-dark .text-amber-700, .app-dark .text-amber-800 { color: #fcd34d !important; }
+    .app-dark .text-red-700, .app-dark .text-red-800, .app-dark .text-rose-700, .app-dark .text-rose-800 { color: #fda4af !important; }
+    .app-dark .text-violet-700, .app-dark .text-violet-800, .app-dark .text-indigo-700, .app-dark .text-indigo-800 { color: #c4b5fd !important; }
+    .app-dark .ui-card { background: #0f1b2d; border-color: #263852; box-shadow: 0 10px 30px rgba(0,0,0,.14); }
+    .app-dark .ui-card:hover { border-color: #3b82f6; box-shadow: 0 14px 34px rgba(0,0,0,.22); }
+    .app-dark .custom-scrollbar::-webkit-scrollbar-track { background: #0b1627; }
+    .app-dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #38506f; }
+    .app-dark .theme-toggle { background: #152238; border-color: #38506f; color: #dbe7f5; }
+    .app-dark .theme-toggle:hover { background: #20314a; color: #ffffff; }
+    .app-disclaimer a { color: #2563eb; font-weight: 700; text-decoration: none; }
+    .app-disclaimer a:hover { text-decoration: underline; }
+    .app-dark .app-disclaimer a { color: #93c5fd; }
+
+    /* Friendly specialist sizers — light-first shells; readable remaps in both themes */
+    .friendly-sizer {
+      color: #0f172a;
+    }
+    .friendly-sizer .w-96.border-r {
+      background: #ffffff;
+      border-color: #e2e8f0 !important;
+    }
+    .friendly-sizer .sizer-results-sticky .text-sm {
+      color: #0f172a;
+    }
+    .friendly-sizer .sizer-results-sticky .text-\[10px\] {
+      color: #64748b;
+    }
+    .app-dark .friendly-sizer {
+      color: #e2e8f0;
+    }
+    .app-dark .friendly-sizer .w-96.border-r {
+      background: #0f1b2d !important;
+      border-color: #263852 !important;
+    }
+    .app-dark .friendly-sizer .sizer-results-sticky .text-sm,
+    .app-dark .sizer-page-toolbar .text-sm {
+      color: #f1f5f9 !important;
+    }
+    .app-dark .friendly-sizer .sizer-results-sticky .text-\[10px\],
+    .app-dark .sizer-page-toolbar .text-\[10px\] {
+      color: #94a3b8 !important;
+    }
+    .app-dark .st-panel {
+      background: #152238 !important;
+      border-color: #263852 !important;
+      color: #e2e8f0;
+    }
+    .app-dark .st-panel .text-slate-900,
+    .app-dark .st-panel .text-2xl {
+      color: #f8fafc !important;
+    }
+    .app-dark [class~="bg-indigo-50/30"],
+    .app-dark [class~="bg-emerald-50/30"],
+    .app-dark [class~="bg-amber-50/30"],
+    .app-dark [class~="bg-cyan-50"],
+    .app-dark [class~="bg-emerald-50"],
+    .app-dark [class~="bg-amber-50"],
+    .app-dark [class~="bg-rose-50"],
+    .app-dark [class~="bg-violet-50"],
+    .app-dark [class~="bg-indigo-50"],
+    .app-dark [class~="bg-indigo-50/40"],
+    .app-dark [class~="bg-indigo-50/60"],
+    .app-dark [class~="bg-indigo-50/70"],
+    .app-dark [class~="bg-indigo-50/80"],
+    .app-dark [class~="bg-sky-50"],
+    .app-dark [class~="bg-teal-50"],
+    .app-dark [class~="bg-violet-50/50"],
+    .app-dark [class~="bg-violet-50/60"],
+    .app-dark [class~="bg-emerald-50/80"],
+    .app-dark [class~="bg-blue-50/50"],
+    .app-dark [class~="bg-blue-50/60"],
+    .app-dark [class~="bg-slate-50/50"],
+    .app-dark [class~="bg-slate-50/60"],
+    .app-dark [class~="bg-white/70"] {
+      background-color: rgba(15, 23, 42, 0.72) !important;
+    }
+    /* DSM instance cards + similar half-tint slate panels */
+    .app-dark [class~="bg-slate-50/60"] {
+      background-color: #152238 !important;
+      border-color: #38506f !important;
+    }
+    /* vDefend payoff / amber callouts — never leave bright yellow wash in dark */
+    .app-dark [class~="bg-amber-50/90"],
+    .app-dark [class~="bg-amber-50/80"] {
+      background-color: #2a2110 !important;
+      border-color: #a16207 !important;
+    }
+    .app-dark [class~="bg-amber-50/90"] .text-slate-800,
+    .app-dark [class~="bg-amber-50/90"] li,
+    .app-dark [class~="bg-amber-50/80"] .text-slate-800,
+    .app-dark [class~="bg-amber-50/80"] li,
+    .app-dark .vdefend-payoff,
+    .app-dark .vdefend-payoff li,
+    .app-dark .vdefend-payoff .text-amber-950 {
+      color: #fde68a !important;
+    }
+    .app-dark .vdefend-payoff .text-amber-900 {
+      color: #fbbf24 !important;
+    }
+    .app-dark .text-blue-600, .app-dark .text-blue-900, .app-dark .text-blue-950 { color: #93c5fd !important; }
+    .app-dark .text-indigo-600, .app-dark .text-indigo-900, .app-dark .text-indigo-950 { color: #c4b5fd !important; }
+    .app-dark .text-emerald-600, .app-dark .text-emerald-900 { color: #6ee7b7 !important; }
+    .app-dark .text-amber-600, .app-dark .text-amber-900, .app-dark .text-amber-950 { color: #fcd34d !important; }
+    .app-dark .text-cyan-600, .app-dark .text-cyan-700, .app-dark .text-cyan-800, .app-dark .text-cyan-900 { color: #67e8f9 !important; }
+    .app-dark .text-teal-700, .app-dark .text-teal-800, .app-dark .text-teal-900 { color: #5eead4 !important; }
+    .app-dark .text-rose-600, .app-dark .text-rose-700, .app-dark .text-rose-800 { color: #fda4af !important; }
+    .app-dark .text-sky-700, .app-dark .text-sky-800, .app-dark .text-sky-900 { color: #7dd3fc !important; }
+    /* Networking / VKS violet+purple — was missing; violet-600 arrows & violet-900 body were near-invisible */
+    .app-dark .text-violet-600,
+    .app-dark .text-violet-700,
+    .app-dark .text-violet-900,
+    .app-dark .text-purple-300,
+    .app-dark .text-purple-600,
+    .app-dark .text-purple-700 {
+      color: #ddd6fe !important;
+    }
+    .app-dark .border-blue-100, .app-dark .border-blue-200, .app-dark .border-indigo-100, .app-dark .border-indigo-200,
+    .app-dark .border-emerald-100, .app-dark .border-emerald-200, .app-dark .border-amber-200,
+    .app-dark .border-cyan-200, .app-dark .border-cyan-300, .app-dark .border-rose-200, .app-dark .border-violet-200,
+    .app-dark .border-teal-200, .app-dark .border-sky-200,
+    .app-dark .border-purple-200, .app-dark .border-purple-800 {
+      border-color: #38506f !important;
+    }
+    .app-dark .capacity-flow-segment {
+      color: #0f172a !important;
+      text-shadow: 0 1px 0 rgba(255,255,255,.35);
+    }
+    .app-dark .sizer-info-btn {
+      border-color: #64748b !important;
+      color: #cbd5e1 !important;
+    }
+    .app-dark .sizer-info-btn:hover,
+    .app-dark .sizer-info-btn:focus {
+      border-color: #60a5fa !important;
+      color: #93c5fd !important;
+    }
+    .app-dark .border-2.border-indigo-300,
+    .app-dark .border-2.border-emerald-300,
+    .app-dark .border-2.border-amber-300,
+    .app-dark .border-2.border-indigo-400 {
+      border-color: #4f6d91 !important;
+    }
+    .app-dark hr { border-color: #263852 !important; }
+    .app-dark .sizer-inputs-toggle {
+      background: #152238;
+      border-color: #38506f;
+      color: #e2e8f0;
+    }
+    .app-dark table thead th { color: #cbd5e1 !important; }
+    .app-dark table tbody td { color: #e2e8f0 !important; }
+    .app-dark .bg-gradient-to-r.from-blue-950,
+    .app-dark .bg-gradient-to-r.from-slate-900,
+    .app-dark [class*="from-blue-950"],
+    .app-dark [class*="from-slate-900"],
+    .app-dark [class*="to-indigo-900"],
+    .app-dark [class*="to-slate-800"] {
+      color: #f8fafc;
+    }
+    /* Intentional dark hero headers keep light text even in light mode */
+    .friendly-sizer .bg-gradient-to-r.from-blue-950,
+    .friendly-sizer [class*="from-blue-950"][class*="to-indigo-900"],
+    .friendly-sizer [class*="from-slate-900"][class*="to-slate-800"] {
+      color: #f8fafc;
+    }
+    .friendly-sizer [class*="from-blue-950"] .text-blue-100,
+    .friendly-sizer [class*="from-blue-950"] .text-blue-300,
+    .friendly-sizer [class*="from-slate-900"] .text-slate-300,
+    .friendly-sizer [class*="from-slate-900"] .text-blue-300 {
+      color: inherit;
+    }
+    .app-light .friendly-sizer [class*="from-blue-950"] .text-blue-100,
+    .app-light .friendly-sizer [class*="from-blue-950"] .text-blue-300 { color: #bfdbfe !important; }
+    .app-light .friendly-sizer [class*="from-blue-950"] h3,
+    .app-light .friendly-sizer [class*="from-slate-900"] h3 { color: #ffffff !important; }
+    .app-light .friendly-sizer [class*="from-slate-900"] .text-slate-300 { color: #cbd5e1 !important; }

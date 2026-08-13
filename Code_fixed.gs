@@ -18,8 +18,8 @@ const IO_DEVICE_CACHE_KEY = 'iodevices_v2';
  * quota; ScriptCache sharing still holds under "Execute as: User accessing",
  * but runtime quota is then per-user.
  *
- * Deploy dist/Index.html only (see ./deploy.sh) — Babel Standalone cold-compile
- * dominates workshop thundering-herd opens.
+ * Deploy: `npm run deploy` (Vite build → clasp push of dist/gas Index.html + Code.gs).
+ * Production is a single minified HtmlService file (no Babel/Tailwind CDN).
  */
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
