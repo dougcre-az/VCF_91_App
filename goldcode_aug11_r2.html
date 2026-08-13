@@ -8191,10 +8191,6 @@ const VCFApp = () => {
       const derivedLogs = checkEnabled('log management') || checkEnabled('vcf logs');
       const derivedOpsNet = checkEnabled('operations for networks');
       const placementAvi = checkEnabled('avi load balancer') || checkEnabled('avi mgmt');
-      const aviCatalogKeys = useMemo(
-        () => Object.keys(sizingSelections).filter(k => /avi\s*load\s*balancer/i.test(k) || /avi\s*mgmt/i.test(k)),
-        [sizingSelections]
-      );
       const derivedAuto = checkEnabled('automation');
       // Specialist tools stay reachable from the nav even when Phase-6 / catalog scope is off.
       // Scope toggles still gate ADR rows, Design IDs, and fleet "in scope" — not sidebar visibility.
@@ -8736,7 +8732,7 @@ const VCFApp = () => {
           noActiveMatch: actionable.filter(r => r.status === 'NO_ACTIVE_MATCH'),
           mapped: actionable.filter(r => r.status === 'MAPPED'),
         };
-      }, [vcgData.designIds, vcgData['Design IDs'], vcgData.design_ids, designDecisionContext, complianceScope, hldIncAI, hldIncDR, hldIncSEC, hldAviScope, hldHcxScope, hldDsmScope, placementAvi, placementHcx]);
+      }, [vcgData.designIds, vcgData['Design IDs'], vcgData.design_ids, designDecisionContext, complianceScope, hldIncAI, hldIncDR, hldIncSEC, hldAviScope, hldHcxScope, hldDsmScope]);
 
       const ADR_BUCKET_MAP = {
         COMPUTE: ['CORE', 'FLEET'], TOPOLOGY: ['CORE', 'VSAN', 'DR'], NETWORK: ['NET', 'NSX', 'EDGE', 'AVI'],
