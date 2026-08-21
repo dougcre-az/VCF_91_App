@@ -130,6 +130,107 @@ import './styles.css';
       return '';
     };
 
+    const rvHostName = (row) => getCol(row, ['host', 'name', 'hostname']);
+    const rvVmName = (row) => getCol(row, ['vm', 'name', 'vmname']);
+    const rvClusterName = (row) => getCol(row, ['cluster']);
+    const rvVcenterName = (row) => getCol(row, ['visdkserver', 'viserver', 'vcenter', 'vcenterserver', 'virtualcenter', 'server']) || '(no vCenter)';
+    const rvDatacenterName = (row) => getCol(row, ['datacenter', 'dc', 'site']) || '(no datacenter)';
+
+    const vcgCpuSeriesOf = (row) => {
+      if (!row) return { series: '', releases: '' };
+      const keys = Object.keys(row);
+      const seriesKey = keys.find(k => k.toLowerCase().replace(/[^a-z]/g, '').includes('cpuseries')) || keys.find(k => /series/i.test(k));
+      const relKey = keys.find(k => k.toLowerCase().replace(/[^a-z]/g, '').includes('supportedreleases')) || keys.find(k => /release/i.test(k));
+      return {
+        series: String(seriesKey ? row[seriesKey] : '').replace(/\s+/g, ' ').trim(),
+        releases: String(relKey ? row[relKey] : '').trim()
+      };
+    };
+
+    const matchCpuToVcgSeries = (cpuModel, cpuRows) => {
+      const host = String(cpuModel || '').replace(/\(r\)|\(tm\)/ig, ' ').replace(/\s+/g, ' ').trim();
+      const hostL = host.toLowerCase();
+      if (!hostL || !cpuRows?.length) return null;
+      const catalog = cpuRows.map(vcgCpuSeriesOf).filter(r => r.series);
+      const hits = [];
+      const pushHits = (pred, score) => {
+        catalog.forEach(r => { if (pred(r.series.toLowerCase().replace(/\n/g, ' '))) hits.push({ ...r, score }); });
+      };
+      const epyc = hostL.match(/epyc\s*([0-9]{4})/);
+      if (epyc) {
+        const sku = epyc[1];
+        const family = `${sku[0]}00${sku[3]}`;
+        pushHits(s => s.includes('epyc') && (s.includes(sku) || s.includes(family) || s.includes(`${sku[0]}00${sku[3]}`)), 12);
+      }
+      const eSeries = hostL.match(/\be-([0-9]{4})/);
+      if (eSeries) {
+        const fam = `${eSeries[1].slice(0, 2)}00`;
+        pushHits(s => s.includes(`e-${fam}`) || s.includes(`e-${eSeries[1].slice(0, 2)}`), 10);
+      }
+      const dSeries = hostL.match(/\bd-([0-9]{4})/);
+      if (dSeries) {
+        const fam = `${dSeries[1].slice(0, 2)}00`;
+        pushHits(s => s.includes(`d-${fam}`) || s.includes(`d-${dSeries[1].slice(0, 2)}`), 10);
+      }
+      const named = hostL.match(/\b(platinum|gold|silver|bronze)\s*([0-9]{4})/);
+      if (named) {
+        const tier = named[1];
+        const family = `${named[2].slice(0, 2)}00`;
+        pushHits(s => s.includes(tier) && (s.includes(family) || s.includes(named[2])), 11);
+      }
+      const xeon6 = hostL.match(/\b([56][0-9]{3}[pe])\b/);
+      if (xeon6) pushHits(s => s.includes(xeon6[1].slice(0, 4)) || s.includes('granite') || s.includes('6500p') || s.includes('6700p') || s.includes('6900p'), 10);
+      if (/atom/.test(hostL)) pushHits(s => s.includes('atom') || s.includes('c3000'), 8);
+      if (!hits.length) return null;
+      hits.sort((a, b) => b.score - a.score);
+      const top = hits[0].score;
+      const best = [];
+      const seen = new Set();
+      hits.filter(h => h.score === top).forEach(h => {
+        if (!seen.has(h.series)) { seen.add(h.series); best.push(h); }
+      });
+      return {
+        series: best.map(h => h.series).join(' · '),
+        releases: best[0].releases,
+        listed91: best.some(h => /esxi\s*9\.1/i.test(h.releases)),
+        ambiguous: best.length > 1
+      };
+    };
+
+    const applyInventoryScope = (rv, excludedHosts, excludedVMs) => {
+      if (!rv) return null;
+      const hostOk = (name) => !!name && !excludedHosts[name];
+      const vmOk = (name, host) => !!name && !excludedVMs[name] && (!host || hostOk(host));
+      const vHost = (rv.vHost || []).filter(h => hostOk(rvHostName(h)));
+      const inHosts = new Set(vHost.map(rvHostName).filter(Boolean));
+      const inClusters = new Set(vHost.map(rvClusterName).filter(Boolean));
+      const vInfo = (rv.vInfo || []).filter(v => vmOk(rvVmName(v), getCol(v, ['host', 'hostname'])));
+      const inVms = new Set(vInfo.map(rvVmName).filter(Boolean));
+      const keepHostOrVm = (row) => {
+        const vm = rvVmName(row) || getCol(row, ['vmname']);
+        const host = rvHostName(row);
+        const cluster = rvClusterName(row);
+        if (vm) return inVms.has(vm);
+        if (host) return inHosts.has(host);
+        if (cluster) return inClusters.has(cluster);
+        return true;
+      };
+      return {
+        ...rv,
+        vHost,
+        vInfo,
+        vHBA: (rv.vHBA || []).filter(keepHostOrVm),
+        vTools: (rv.vTools || []).filter(keepHostOrVm),
+        vNetwork: (rv.vNetwork || []).filter(keepHostOrVm),
+        vDatastore: (rv.vDatastore || []).filter(keepHostOrVm),
+        dvSwitch: (rv.dvSwitch || []).filter(keepHostOrVm),
+        vCD: (rv.vCD || []).filter(keepHostOrVm),
+        vSnapshot: (rv.vSnapshot || []).filter(keepHostOrVm),
+        vCluster: (rv.vCluster || []).filter(row => inClusters.has(getCol(row, ['name', 'cluster', 'clustername'])) || keepHostOrVm(row)),
+        vMemory: (rv.vMemory || []).filter(keepHostOrVm)
+      };
+    };
+
     // --- ICONS ---
     const IconCheck = () => <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>;
     const IconWarn = () => <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>;
@@ -6745,7 +6846,14 @@ const VCFApp = () => {
       const [loadingVcg, setLoadingVcg] = useState(true);
       const [status, setStatus] = useState(null);
       const [coreDataError, setCoreDataError] = useState(null);
-      const [rawRvData, setRawRvData] = useState(null);
+      const [fullRvData, setFullRvData] = useState(null);
+      const [excludedHosts, setExcludedHosts] = useState({});
+      const [excludedVMs, setExcludedVMs] = useState({});
+      const [scopeOpen, setScopeOpen] = useState({});
+      const rawRvData = useMemo(
+        () => applyInventoryScope(fullRvData, excludedHosts, excludedVMs),
+        [fullRvData, excludedHosts, excludedVMs]
+      );
       
       // On-Demand Interop DB State
       const [interopDb, setInteropDb] = useState(null);
@@ -6860,8 +6968,13 @@ const VCFApp = () => {
         VDEFEND_COVERAGE: ['vDefend Coverage', 'Specialist · 1-2-3-4 journey + SSP'],
       };
       const activeModuleMeta = moduleMeta[activeModule] || [activeModule, ''];
-      const [readinessTab, setReadinessTab] = useState('summary');
+      const [readinessTab, setReadinessTab] = useState('estate');
       const [viewFilter, setViewFilter] = useState('ALL');
+      const [readinessSearch, setReadinessSearch] = useState('');
+      const [tableSort, setTableSort] = useState({ key: 'name', dir: 'asc' });
+      const [tablePage, setTablePage] = useState(0);
+      const [isDragOver, setIsDragOver] = useState(false);
+      const READINESS_PAGE_SIZE = 50;
       const [archFilter, setArchFilter] = useState('ALL');
       const [archSelectedCluster, setArchSelectedCluster] = useState('ALL');
       const [showArchSidebar, setShowArchSidebar] = useState(true);
@@ -8265,10 +8378,70 @@ const VCFApp = () => {
           });
       }, [rawRvData, hldStorageProto, gfStorageType, derivedAuto, derivedAvi, derivedHcx, hldEdgeStrategy, archSelectedCluster, fleetMgmtCluster, siteProfiles, hldIncAI, hldIncDR, hldIncSEC, hldIncDsm, manualVksScope]);
         
-      const handleFileUpload = async (event) => {
-        const files = Array.from(event.target.files);
-        if (files.length === 0) return;
-        try { await window.ensureXlsx(); } catch (err) {
+      const emptyRvSheets = () => ({ vInfo: [], vHost: [], vHBA: [], vTools: [], vNetwork: [], vDatastore: [], dvSwitch: [], vCD: [], vSnapshot: [], vCluster: [], vMemory: [] });
+
+      const ingestWorkbookInto = (workbook, fileName, combinedRvData) => {
+        const isCsv = String(fileName).toLowerCase().endsWith('.csv');
+        if (isCsv) {
+          const sheetName = workbook.SheetNames[0];
+          const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
+          Object.keys(combinedRvData).forEach(key => {
+            const pattern = new RegExp('(?:^|[-_\\s])' + key + '\\s*(?:\\(\\d+\\))?\\.csv$', 'i');
+            if (pattern.test(fileName)) combinedRvData[key] = combinedRvData[key].concat(json);
+          });
+          return;
+        }
+        const safeSheetNames = workbook.SheetNames.map(s => ({
+          original: s,
+          clean: s.toLowerCase().replace(/[^a-z0-9]/g, '')
+        }));
+        Object.keys(combinedRvData).forEach(tab => {
+          const cleanTab = tab.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const match = safeSheetNames.find(s => s.clean === cleanTab);
+          if (match) {
+            const json = XLSX.utils.sheet_to_json(workbook.Sheets[match.original], { defval: "" });
+            combinedRvData[tab] = combinedRvData[tab].concat(json);
+          }
+        });
+      };
+
+      const readFileBuffer = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target.result);
+        reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+        reader.onabort = () => reject(new Error(`Reading ${file.name} was cancelled.`));
+        reader.readAsArrayBuffer(file);
+      });
+
+      const processFileInto = async (file, combinedRvData) => {
+        const name = file.name || 'file';
+        const lower = name.toLowerCase();
+        if (lower.endsWith('.zip')) {
+          try { await window.ensureJszip(); } catch (_err) {
+            throw new Error('ZIP import unavailable — JSZip CDN blocked or offline.');
+          }
+          const zip = await window.JSZip.loadAsync(file);
+          const entries = Object.keys(zip.files)
+            .map(k => zip.files[k])
+            .filter(f => !f.dir && /\.(xlsx|xlsm|csv)$/i.test(f.name) && !/(^|\/)__MACOSX\//.test(f.name));
+          if (!entries.length) throw new Error(`${name} did not contain .xlsx, .xlsm, or .csv files.`);
+          for (const entry of entries) {
+            setStatus(`Extracting ${name} → ${entry.name}`);
+            const buf = await entry.async('uint8array');
+            const workbook = XLSX.read(buf, { type: 'array', cellDates: true });
+            ingestWorkbookInto(workbook, entry.name, combinedRvData);
+          }
+          return;
+        }
+        const buffer = await readFileBuffer(file);
+        const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: true });
+        ingestWorkbookInto(workbook, name, combinedRvData);
+      };
+
+      const ingestInventoryFiles = async (fileList) => {
+        const files = Array.from(fileList || []).filter(Boolean);
+        if (!files.length) return;
+        try { await window.ensureXlsx(); } catch (_err) {
           setStatus('Spreadsheet import unavailable — XLSX CDN blocked or offline.');
           return;
         }
@@ -8279,75 +8452,53 @@ const VCFApp = () => {
         setLogsVer(''); setOpsNetworksVer(''); setVcenterVer(''); setEsxVer('');
         setEsxBuildOverrides({}); setEsxBuildSelected({});
         setStatus(`Processing ${files.length} file(s)...`);
-        
-        let combinedRvData = { vInfo: [], vHost: [], vHBA: [], vTools: [], vNetwork: [], vDatastore: [], dvSwitch: [], vCD: [], vSnapshot: [], vCluster: [], vMemory: [] };
-
-        const processFile = (file) => {
-          return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              try {
-                const data = new Uint8Array(e.target.result);
-                // 1. Added cellDates: true to fix the Snapshot bug safely
-                const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-                const isCsv = file.name.toLowerCase().endsWith('.csv');
-                
-                if (isCsv) {
-                   const sheetName = workbook.SheetNames[0]; 
-                   // 2. Removed raw: false to stop commas from destroying numbers
-                   const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
-                   
-                   Object.keys(combinedRvData).forEach(key => {
-                      const pattern = new RegExp('(?:^|[-_\\s])' + key + '\\s*(?:\\(\\d+\\))?\\.csv$', 'i');
-                      if (pattern.test(file.name)) {
-                          combinedRvData[key] = combinedRvData[key].concat(json);
-                      }
-                   });
-                } else {
-                   const safeSheetNames = workbook.SheetNames.map(s => ({
-                       original: s,
-                       clean: s.toLowerCase().replace(/[^a-z0-9]/g, '')
-                   }));
-
-                   Object.keys(combinedRvData).forEach(tab => {
-                     const cleanTab = tab.toLowerCase().replace(/[^a-z0-9]/g, '');
-                     const match = safeSheetNames.find(s => s.clean === cleanTab);
-                     
-                     if (match) {
-                       // 3. Removed raw: false so RAM/CPU limits are calculated accurately
-                       const json = XLSX.utils.sheet_to_json(workbook.Sheets[match.original], { defval: "" });
-                       combinedRvData[tab] = combinedRvData[tab].concat(json); 
-                     }
-                   });
-                }
-                resolve();
-              } catch (error) {
-                reject(new Error(`Error in ${file.name}: ${error.message}`));
-              }
-            };
-            reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
-            reader.onabort = () => reject(new Error(`Reading ${file.name} was cancelled.`));
-            reader.readAsArrayBuffer(file);
-          });
-        };
-
+        const combinedRvData = emptyRvSheets();
         try {
-          await Promise.all(files.map(processFile));
+          for (let i = 0; i < files.length; i++) {
+            setStatus(`Processing ${i + 1} of ${files.length}: ${files[i].name}`);
+            await processFileInto(files[i], combinedRvData);
+          }
           const importedRowCount = Object.values(combinedRvData).reduce((sum, rows) => sum + rows.length, 0);
           if (importedRowCount === 0) {
-            throw new Error('No recognized RVTools sheets or CSV filenames were found. Expected tabs/files such as vInfo and vHost.');
+            throw new Error('No recognized RVTools sheets or CSV filenames were found. Expected tabs/files such as vInfo and vHost. ZIP archives of those files are also accepted.');
           }
-          setRawRvData(combinedRvData);
-          runReadinessValidation(combinedRvData);
-          runOptimizationEngine(combinedRvData);
+          setFullRvData(combinedRvData);
+          setExcludedHosts({});
+          setExcludedVMs({});
+          setScopeOpen({});
+          setReadinessTab('estate');
           const missingCoreTabs = ['vInfo', 'vHost'].filter(tab => combinedRvData[tab].length === 0);
+          const hostCount = combinedRvData.vHost.length;
+          const vmCount = combinedRvData.vInfo.length;
           setStatus(missingCoreTabs.length
-            ? `⚠️ Analysis completed, but these core tabs were missing: ${missingCoreTabs.join(', ')}.`
-            : `✅ Successfully analyzed environment.`
+            ? `Analysis completed, but these core tabs were missing: ${missingCoreTabs.join(', ')}.`
+            : `Analyzed ${hostCount.toLocaleString()} hosts and ${vmCount.toLocaleString()} VMs.`
           );
         } catch (error) {
           setStatus(`❌ ${error.message}`);
         }
+      };
+
+      const handleFileUpload = async (event) => {
+        await ingestInventoryFiles(event.target.files);
+        event.target.value = '';
+      };
+
+      const handleInventoryDragOver = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragOver(true);
+      };
+      const handleInventoryDragLeave = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragOver(false);
+      };
+      const handleInventoryDrop = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragOver(false);
+        ingestInventoryFiles(event.dataTransfer.files);
       };
 
       const handleStatusOverride = (tabKey, id, newStatus) => {
@@ -8370,41 +8521,24 @@ const VCFApp = () => {
           const vendor = String(getCol(host, ['vendor', 'manufacturer', 'sysinfo'])).toLowerCase();
           const modelStr = String(getCol(host, ['model', 'sysinfo'])).toLowerCase();
           
+          const oemLabel = [getCol(host, ['vendor', 'manufacturer']), getCol(host, ['model', 'productname', 'sysinfo'])].filter(Boolean).join(' ').trim();
           let cpuStatus = 'yellow';
           let cpuDetails = cpuModel || 'Unknown CPU';
-          
+          const vcgCpu = matchCpuToVcgSeries(cpuModel, vcgData.cpus);
           if (vendor.includes('nutanix') || modelStr.includes('nutanix') || modelStr.includes('nx-')) {
              cpuStatus = 'red';
              cpuDetails = `[NUTANIX BLOCKED] ${cpuDetails} - Nutanix HCI hardware is fundamentally incompatible with VCF SDDC Manager automated lifecycle. Hardware replacement required.`;
+          } else if (vcgCpu) {
+             cpuStatus = vcgCpu.listed91 ? 'green' : 'yellow';
+             cpuDetails = `${cpuModel || 'Unknown CPU'} · VCG: ${vcgCpu.series}${vcgCpu.releases ? ` (${vcgCpu.releases})` : ''}${vcgCpu.ambiguous ? ' — confirm SKU against the CPUs sheet' : ''}`;
           } else {
-             let hostCpuClean = String(cpuModel).toLowerCase().replace(/\(r\)|\(tm\)/g, '');
-             const match = hostCpuClean.match(/([0-9]{4})/); 
-          
-             if (match) {
-                 const modelNum = parseInt(match[1], 10);
-                 if (hostCpuClean.includes('xeon')) {
-                     if (hostCpuClean.includes('v3') || hostCpuClean.includes('v4') || hostCpuClean.includes('v2')) {
-                         cpuStatus = 'red'; 
-                     } else if (modelNum >= 3000 && modelNum < 9999) {
-                         const gen = Math.floor((modelNum % 1000) / 100); 
-                         if (gen === 1) { 
-                             cpuStatus = 'yellow'; 
-                             cpuDetails += ' (Skylake: Supported in VCF 9.1, Deprecated in 9.2)';
-                         } else if (gen < 1) {
-                             cpuStatus = 'red'; 
-                         } else {
-                             cpuStatus = 'green'; 
-                         }
-                     }
-                 } else if (hostCpuClean.includes('epyc')) {
-                     const gen = parseInt(match[1].charAt(3), 10);
-                     if (gen <= 1) cpuStatus = 'red'; 
-                     else cpuStatus = 'green'; 
-                 }
-             }
-          } // <--- THIS is the brace that was missing!
+             const legacy = /e5-|e7-|\bv[234]\b|haswell|broadwell/i.test(String(cpuModel));
+             cpuStatus = legacy ? 'red' : 'yellow';
+             cpuDetails = `${cpuModel || 'Unknown CPU'} · Not in VCG CPUs sheet for ESXi 9.1`;
+          }
+          if (oemLabel) cpuDetails += ` · OEM: ${oemLabel}`;
 
-          cpuRes.push({ id: genId(), name: hostName, cluster: clusterName, host: hostName, details: cpuDetails, status: cpuStatus });
+          cpuRes.push({ id: genId(), name: hostName, cluster: clusterName, host: hostName, details: cpuDetails, status: cpuStatus, vcgLevel: vcgCpu ? vcgCpu.series : 'Not in CPUs sheet' });
 
           const ntpServers = getCol(host, ['ntpservers', 'ntpserver']);
           const ntpdRunning = String(getCol(host, ['ntpd', 'ntpdrunning'])).toLowerCase();
@@ -8616,7 +8750,9 @@ if (rvData.vHBA) {
             if (!vmName) return;
             const connected = String(getCol(cd, ['connected'])).toLowerCase();
             if (connected === 'true' || connected === 'yes') {
-                cdRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `${getCol(cd, ['label', 'device', 'cdlabel', 'devicenode', 'devicetype']) || 'CD/DVD Drive'} is CONNECTED`, status: 'red' });
+                const deviceLabel = getCol(cd, ['label', 'device', 'cdlabel', 'devicenode', 'devicetype', 'type']) || 'CD/DVD Drive';
+                const isFloppy = /floppy/i.test(String(deviceLabel));
+                cdRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `${deviceLabel} is CONNECTED${isFloppy ? ' — floppy is a vMotion / rolling-upgrade blocker' : ''}`, status: 'red' });
             }
           });
         }
@@ -8646,10 +8782,6 @@ if (rvData.vHBA) {
             datastores: dsRes, dvSwitches: dvsRes, clusters: clusterRes, cdDrives: cdRes, snapshots: snapRes, software: softwareRes
         });
       };
-
-      useEffect(() => {
-        if (rawRvData && ioDeviceDb) runReadinessValidation(rawRvData);
-      }, [ioDeviceDb]);
 
       const runOptimizationEngine = (rvData) => {
           const hStats = {};
@@ -8714,6 +8846,12 @@ if (rvData.vHBA) {
           }
           setOptimizationData({ vms: processedVms.sort((a, b) => b.tierableGB - a.tierableGB), hostStats: hStats });
       };
+
+      useEffect(() => {
+        if (!rawRvData || !vcgData) return;
+        runReadinessValidation(rawRvData);
+        runOptimizationEngine(rawRvData);
+      }, [rawRvData, ioDeviceDb, vcgData]);
 
      const optProjections = useMemo(() => {
         const isRefresh = optFinancialModel === 'REFRESH';
@@ -10153,7 +10291,11 @@ const architectureMath = useMemo(() => {
           'Reset Tool clears the uploaded RVTools inventory and all sizing / readiness / fleet results in this session.\n\nNothing is saved server-side. Continue?'
         );
         if (!ok) return;
-        setRawRvData(null);
+        setFullRvData(null);
+        setExcludedHosts({});
+        setExcludedVMs({});
+        setScopeOpen({});
+        setReadinessTab('estate');
         setStatus(null);
         setReadinessResults({
           cpus: [], hostConfig: [], guestOs: [], ioDevices: [], vNics: [], vmTools: [], vmHw: [],
@@ -10189,7 +10331,30 @@ const architectureMath = useMemo(() => {
         setOptSelectedCluster('ALL');
         setArchSelectedCluster('ALL');
         setActiveModule('READINESS');
+        setReadinessSearch('');
+        setTableSort({ key: 'name', dir: 'asc' });
+        setTablePage(0);
+        setIsDragOver(false);
       };
+
+      const estateRibbon = useMemo(() => {
+        if (!fullRvData) return null;
+        const hosts = (rawRvData?.vHost || []).length;
+        const vms = (rawRvData?.vInfo || []).length;
+        const hostTotal = (fullRvData.vHost || []).length;
+        const vmTotal = (fullRvData.vInfo || []).length;
+        const clusters = new Set((rawRvData?.vHost || []).map(h => getCol(h, ['cluster'])).filter(Boolean)).size;
+        const vcenters = new Set((rawRvData?.vHost || []).map(h => getCol(h, ['visdkserver', 'viserver', 'vcenter', 'vcenterserver', 'virtualcenter', 'server'])).filter(Boolean)).size;
+        const rows = Object.values(readinessResults || {}).flat().filter(r => r && r.status);
+        return {
+          hosts, vms, hostTotal, vmTotal, clusters, vcenters,
+          excluded: (hostTotal - hosts) + (vmTotal - vms),
+          red: rows.filter(r => r.status === 'red').length,
+          yellow: rows.filter(r => r.status === 'yellow').length
+        };
+      }, [fullRvData, rawRvData, readinessResults]);
+      const CORE_MODULE_ORDER = ['READINESS', 'UPGRADE_PLAN', 'OPTIMIZE', 'EDGE', 'ARCHITECTURE', 'FLEET'];
+      const coreModuleIndex = CORE_MODULE_ORDER.indexOf(activeModule);
 
       const renderSidebar = () => (
         <div className={`bg-slate-900 text-slate-300 flex flex-col h-full shrink-0 shadow-xl z-50 transition-all duration-300 ${isSidebarCollapsed ? 'w-16' : 'w-64'}`}>
@@ -10331,24 +10496,58 @@ const architectureMath = useMemo(() => {
       const renderTable = (data, headers, tabKey, hasVcgCol = false) => {
         if (!data || data.length === 0) return <p className="text-gray-500 dark:text-slate-400 italic p-4">No data available. Ensure your uploaded files contain the necessary data.</p>;
         
-        const filteredData = data.filter(r => {
+        const query = readinessSearch.trim().toLowerCase();
+        let filteredData = data.filter(r => {
             if (viewFilter === 'ALL') return true;
             if (viewFilter === 'ISSUES') return r.status !== 'green';
             if (viewFilter === 'RED') return r.status === 'red';
             if (viewFilter === 'YELLOW') return r.status === 'yellow';
             return true;
+        }).filter(r => {
+            if (!query) return true;
+            return [r.name, r.cluster, r.host, r.details, r.vcgLevel].some(v => String(v || '').toLowerCase().includes(query));
         });
+
+        const colKeys = hasVcgCol ? ['name', 'cluster', 'host', 'details', 'vcgLevel', 'status'] : ['name', 'cluster', 'host', 'details', 'status'];
+        const dir = tableSort.dir === 'desc' ? -1 : 1;
+        const sortKey = colKeys.includes(tableSort.key) ? tableSort.key : 'name';
+        filteredData = [...filteredData].sort((a, b) => String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? ''), undefined, { numeric: true, sensitivity: 'base' }) * dir);
         
-        if (filteredData.length === 0) return <p className="text-emerald-600 dark:text-emerald-400 font-bold italic p-4">✅ All clear! No assets found matching the selected filter.</p>;
+        if (filteredData.length === 0) return <p className="text-emerald-600 dark:text-emerald-400 font-bold italic p-4">All clear — no assets match the selected filter or search.</p>;
+
+        const pageCount = Math.max(1, Math.ceil(filteredData.length / READINESS_PAGE_SIZE));
+        const page = Math.min(tablePage, pageCount - 1);
+        const pageRows = filteredData.slice(page * READINESS_PAGE_SIZE, (page + 1) * READINESS_PAGE_SIZE);
+        const toggleSort = (key) => setTableSort(current => current.key === key ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
 
         return (
+          <div>
+          <div className="flex items-center justify-between gap-3 mb-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+            <span>{filteredData.length.toLocaleString()} rows{filteredData.length > READINESS_PAGE_SIZE ? ` · page ${page + 1} of ${pageCount}` : ''}</span>
+            {pageCount > 1 && (
+              <div className="flex items-center gap-2 normal-case tracking-normal">
+                <button type="button" disabled={page === 0} onClick={() => setTablePage(p => Math.max(0, p - 1))} className="px-2 py-1 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-40">Prev</button>
+                <button type="button" disabled={page >= pageCount - 1} onClick={() => setTablePage(p => Math.min(pageCount - 1, p + 1))} className="px-2 py-1 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-40">Next</button>
+              </div>
+            )}
+          </div>
           <div className="overflow-x-auto max-h-96 border border-gray-200 dark:border-slate-700 rounded">
             <table className="min-w-full border-collapse text-sm relative whitespace-nowrap">
               <thead className="sticky top-0 bg-gray-100 dark:bg-slate-800 shadow-sm z-10">
-                <tr>{headers.map((h, i) => <th key={i} className="border-b border-gray-300 dark:border-slate-600 p-3 text-left font-semibold text-gray-700 dark:text-slate-200 bg-gray-50 dark:bg-slate-950">{h}</th>)}</tr>
+                <tr>{headers.map((h, i) => {
+                  const key = colKeys[i] || 'name';
+                  const active = sortKey === key;
+                  return (
+                    <th key={i}>
+                      <button type="button" onClick={() => toggleSort(key)} className="w-full border-b border-gray-300 dark:border-slate-600 p-3 text-left font-semibold text-gray-700 dark:text-slate-200 bg-gray-50 dark:bg-slate-950">
+                        {h}{active ? (tableSort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
+                      </button>
+                    </th>
+                  );
+                })}</tr>
               </thead>
               <tbody>
-                {filteredData.map((row) => (
+                {pageRows.map((row) => (
                   <tr key={row.id} className={`border-b ${row.status === 'green' ? 'bg-emerald-50 dark:bg-emerald-950/40' : (row.status === 'yellow' ? 'bg-amber-50 dark:bg-amber-950/40' : 'bg-red-50 dark:bg-red-950/40')}`}>
                     <td className="p-3 font-medium border-r border-gray-200/50">{row.name}</td>
                     <td className="p-3 border-r border-gray-200/50 text-slate-600 dark:text-slate-300">{row.cluster || '-'}</td>
@@ -10375,6 +10574,298 @@ const architectureMath = useMemo(() => {
               </tbody>
             </table>
           </div>
+          </div>
+        );
+      };
+
+
+      const renderEstateSnapshot = () => {
+        const fullHosts = fullRvData?.vHost || [];
+        const fullVms = fullRvData?.vInfo || [];
+        const scopedHosts = rawRvData?.vHost || [];
+        const scopedVms = rawRvData?.vInfo || [];
+        const num = (row, keys) => {
+          const v = parseFloat(getCol(row, keys));
+          return Number.isFinite(v) ? v : 0;
+        };
+        const hostCores = (h) => num(h, ['cores', 'numcores', '#cores', 'cpucores']);
+        const hostRamGB = (h) => {
+          const mb = num(h, ['memory', 'memorymb', 'memorymib']);
+          if (mb > 4096) return mb / 1024;
+          const gb = num(h, ['memorygb']);
+          return gb || mb;
+        };
+        const vmOn = (v) => !String(getCol(v, ['powerstate', 'power', 'state'])).toLowerCase().includes('off');
+        const tally = (hosts, vms) => {
+          const cores = hosts.reduce((s, h) => s + hostCores(h), 0);
+          const ramGB = hosts.reduce((s, h) => s + hostRamGB(h), 0);
+          const on = vms.filter(vmOn);
+          const vcpu = on.reduce((s, v) => s + (num(v, ['cpus', 'numcpu', '#cpu']) || 0), 0);
+          const clusters = new Set(hosts.map(rvClusterName).filter(Boolean)).size;
+          const vcenters = new Set(hosts.map(rvVcenterName).filter(v => v && v !== '(no vCenter)')).size;
+          return { hosts: hosts.length, vms: vms.length, on: on.length, off: vms.length - on.length, cores, ramGB, vcpu, ratio: cores ? vcpu / cores : 0, clusters, vcenters };
+        };
+        const total = tally(fullHosts, fullVms);
+        const scoped = tally(scopedHosts, scopedVms);
+        const cpuRows = vcgData?.cpus || [];
+        const clusterRows = [];
+        const byCluster = {};
+        scopedHosts.forEach(h => {
+          const c = rvClusterName(h) || '(standalone)';
+          if (!byCluster[c]) byCluster[c] = { name: c, hosts: 0, cores: 0, ramGB: 0, cpus: new Set(), oem: new Set() };
+          const b = byCluster[c];
+          b.hosts += 1;
+          b.cores += hostCores(h);
+          b.ramGB += hostRamGB(h);
+          const cpu = getCol(h, ['cpumodel', 'cpu']);
+          if (cpu) b.cpus.add(cpu);
+          const oem = [getCol(h, ['vendor', 'manufacturer']), getCol(h, ['model'])].filter(Boolean).join(' ');
+          if (oem) b.oem.add(oem);
+        });
+        scopedVms.forEach(v => {
+          const c = rvClusterName(v) || '(standalone)';
+          if (!byCluster[c]) byCluster[c] = { name: c, hosts: 0, cores: 0, ramGB: 0, cpus: new Set(), oem: new Set(), vms: 0 };
+          byCluster[c].vms = (byCluster[c].vms || 0) + 1;
+        });
+        Object.values(byCluster).forEach(row => clusterRows.push(row));
+        clusterRows.sort((a, b) => a.name.localeCompare(b.name));
+
+        const collectLeaves = (node) => {
+          const hosts = [];
+          const vms = [];
+          const walk = (n) => {
+            if (n.kind === 'hs') {
+              hosts.push(n.name);
+              (n.vms || []).forEach(vm => vms.push(vm.name));
+              return;
+            }
+            if (n.kind === 'vm') { vms.push(n.name); return; }
+            (n.kids || []).forEach(walk);
+          };
+          walk(node);
+          return { hosts, vms };
+        };
+        const nodeState = (node) => {
+          if (node.kind === 'vm') return (excludedVMs[node.name] || (node.host && excludedHosts[node.host])) ? 'none' : 'all';
+          if (node.kind === 'hs') {
+            const vmOff = (node.vms || []).filter(vm => excludedVMs[vm.name]).length;
+            const hostOff = excludedHosts[node.name] ? 1 : 0;
+            const tot = 1 + (node.vms || []).length;
+            const off = hostOff + vmOff;
+            if (excludedHosts[node.name]) return 'none';
+            return off === 0 ? 'all' : 'partial';
+          }
+          const L = collectLeaves(node);
+          const tot = L.hosts.length + L.vms.length;
+          if (!tot) return 'all';
+          let off = 0;
+          L.hosts.forEach(n => { if (excludedHosts[n]) off++; });
+          L.vms.forEach(n => { if (excludedVMs[n]) off++; });
+          return off === 0 ? 'all' : off === tot ? 'none' : 'partial';
+        };
+        const toggleNode = (node, include) => {
+          if (node.kind === 'vm') {
+            setExcludedVMs(curr => ({ ...curr, [node.name]: !include }));
+            return;
+          }
+          const L = collectLeaves(node);
+          setExcludedHosts(curr => {
+            const next = { ...curr };
+            L.hosts.forEach(n => { next[n] = !include; });
+            return next;
+          });
+          setExcludedVMs(curr => {
+            const next = { ...curr };
+            L.vms.forEach(n => { next[n] = !include; });
+            return next;
+          });
+        };
+        const roots = (() => {
+          const vcs = {};
+          fullHosts.forEach(h => {
+            const name = rvHostName(h);
+            if (!name) return;
+            const vc = rvVcenterName(h);
+            const dc = rvDatacenterName(h);
+            const cl = rvClusterName(h) || '(standalone)';
+            if (!vcs[vc]) vcs[vc] = { id: `vc:${vc}`, kind: 'vc', name: vc, kids: {} };
+            const vcn = vcs[vc];
+            if (!vcn.kids[dc]) vcn.kids[dc] = { id: `dc:${vc}|${dc}`, kind: 'dc', name: dc, kids: {} };
+            const dcn = vcn.kids[dc];
+            if (!dcn.kids[cl]) dcn.kids[cl] = { id: `cl:${vc}|${dc}|${cl}`, kind: 'cl', name: cl, kids: {} };
+            dcn.kids[cl].kids[name] = { id: `hs:${name}`, kind: 'hs', name, host: h, vms: [] };
+          });
+          const hostNodes = {};
+          const index = (node) => {
+            if (node.kind === 'hs') hostNodes[node.name] = node;
+            Object.values(node.kids || {}).forEach(index);
+          };
+          Object.values(vcs).forEach(index);
+          fullVms.forEach(v => {
+            const vm = rvVmName(v);
+            const host = getCol(v, ['host', 'hostname']);
+            if (!vm || !hostNodes[host]) return;
+            hostNodes[host].vms.push({ id: `vm:${host}|${vm}`, kind: 'vm', name: vm, host });
+          });
+          const toArr = (obj) => Object.keys(obj).sort((a, b) => String(a).localeCompare(String(b))).map(k => obj[k]);
+          return toArr(vcs).map(vc => ({
+            ...vc,
+            kids: toArr(vc.kids).map(dc => ({
+              ...dc,
+              kids: toArr(dc.kids).map(cl => ({ ...cl, kids: toArr(cl.kids) }))
+            }))
+          }));
+        })();
+        const kindClass = (kind) => ({
+          vc: 'bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300',
+          dc: 'bg-violet-50 text-violet-800 dark:bg-violet-950/50 dark:text-violet-300',
+          cl: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300',
+          hs: 'bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300',
+          vm: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+        }[kind] || 'bg-slate-100 text-slate-600');
+        const renderScopeNode = (node, depth) => {
+          const state = nodeState(node);
+          const isOpen = scopeOpen[node.id] ?? (node.kind === 'vc' || node.kind === 'dc');
+          const kids = node.kids || [];
+          const vms = node.vms || [];
+          const hasKids = kids.length > 0 || vms.length > 0;
+          const L = node.kind === 'vm' ? { hosts: [], vms: [node.name] } : collectLeaves(node);
+          return (
+            <div key={node.id}>
+              <div className={`scope-tree-row ${state === 'none' ? 'opacity-50' : ''}`} style={{ paddingLeft: depth * 4 }}>
+                <button type="button" className="w-4 text-[10px] text-slate-400" onClick={() => setScopeOpen(curr => ({ ...curr, [node.id]: !isOpen }))}>{hasKids ? (isOpen ? '▼' : '▶') : ' '}</button>
+                <input
+                  type="checkbox"
+                  className="accent-blue-600"
+                  checked={state === 'all'}
+                  ref={(el) => { if (el) el.indeterminate = state === 'partial'; }}
+                  onChange={() => toggleNode(node, state !== 'all')}
+                  aria-label={`${state === 'all' ? 'Exclude' : 'Include'} ${node.name}`}
+                />
+                <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${kindClass(node.kind)}`}>{node.kind}</span>
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{node.name}</span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 ml-auto whitespace-nowrap">{L.hosts.length ? `${L.hosts.length} hosts` : ''}{L.hosts.length && L.vms.length ? ' · ' : ''}{L.vms.length ? `${L.vms.length} VMs` : ''}</span>
+              </div>
+              {isOpen && hasKids && (
+                <div className="scope-tree-kids">
+                  {kids.map(child => renderScopeNode(child, depth + 1))}
+                  {vms.slice(0, 40).map(vm => renderScopeNode(vm, depth + 1))}
+                  {vms.length > 40 && <div className="text-[10px] text-slate-400 px-8 py-1">{vms.length - 40} more VMs on this host</div>}
+                </div>
+              )}
+            </div>
+          );
+        };
+        const metric = (label, value, hint) => (
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
+            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">{label}</div>
+            <div className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{value}</div>
+            {hint && <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{hint}</div>}
+          </div>
+        );
+        const excludedHostN = Object.values(excludedHosts).filter(Boolean).length;
+        const excludedVmN = Object.values(excludedVMs).filter(Boolean).length;
+
+        return (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-bold text-gray-800 dark:text-slate-100">Current state — facts, not verdicts</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Inventory as loaded. CPU series labels come from the VCG CPUs sheet. Server-model EOS is not in that pack — OEM vendor/model is RVTools evidence only.</p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+              {metric('Hosts in scope', scoped.hosts.toLocaleString(), scoped.hosts !== total.hosts ? `${total.hosts.toLocaleString()} uploaded` : 'RVTools vHost')}
+              {metric('VMs in scope', scoped.vms.toLocaleString(), `${scoped.on.toLocaleString()} powered on`)}
+              {metric('Clusters', scoped.clusters.toLocaleString(), `${scoped.vcenters.toLocaleString()} vCenters`)}
+              {metric('Host cores', scoped.cores.toLocaleString(), `${Math.round(scoped.ramGB).toLocaleString()} GiB RAM`)}
+              {metric('vCPU on', scoped.vcpu.toLocaleString(), scoped.ratio ? `${scoped.ratio.toFixed(2)} vCPU/core` : '—')}
+              {metric('Powered off', scoped.off.toLocaleString(), 'Still in storage demand')}
+              {metric('Excluded hosts', excludedHostN.toLocaleString(), 'Use the tree to toggle')}
+              {metric('Excluded VMs', excludedVmN.toLocaleString(), 'Host exclude also drops its VMs')}
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
+              <div className="xl:col-span-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Scope — include / exclude</div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Uncheck a vCenter, cluster, host, or VM to drop it from readiness, optimization, and the rest of the workflow.</p>
+                  </div>
+                  <button type="button" onClick={() => { setExcludedHosts({}); setExcludedVMs({}); }} className="text-[10px] font-black text-blue-700 dark:text-blue-300 hover:underline whitespace-nowrap">Include all</button>
+                </div>
+                <div className="scope-tree max-h-[28rem] overflow-y-auto border border-slate-100 dark:border-slate-800 rounded p-1">
+                  {roots.length ? roots.map(node => renderScopeNode(node, 0)) : <p className="text-sm text-slate-500 p-3">No hosts in the upload.</p>}
+                </div>
+              </div>
+              <div className="xl:col-span-2 space-y-3">
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2">Live scope math</div>
+                  {[
+                    ['Hosts', total.hosts, scoped.hosts],
+                    ['VMs', total.vms, scoped.vms],
+                    ['Cores', total.cores, scoped.cores],
+                    ['vCPU (on)', total.vcpu, scoped.vcpu]
+                  ].map(([label, from, to]) => (
+                    <div key={label} className="flex items-center justify-between text-xs py-1 border-b border-slate-200 dark:border-slate-800 last:border-0">
+                      <span className="font-bold text-slate-600 dark:text-slate-300">{label}</span>
+                      <span className="font-mono text-slate-800 dark:text-slate-100">{to.toLocaleString()} <span className="text-slate-400">/ {from.toLocaleString()}</span></span>
+                    </div>
+                  ))}
+                </div>
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 max-h-64 overflow-y-auto">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2">OEM / CPU in scope</div>
+                  {scopedHosts.slice(0, 30).map(h => {
+                    const cpu = getCol(h, ['cpumodel', 'cpu']) || '—';
+                    const match = matchCpuToVcgSeries(cpu, cpuRows);
+                    const oem = [getCol(h, ['vendor', 'manufacturer']), getCol(h, ['model'])].filter(Boolean).join(' ') || 'OEM not reported';
+                    return (
+                      <div key={rvHostName(h)} className="text-[10px] py-1.5 border-b border-slate-100 dark:border-slate-800">
+                        <div className="font-black text-slate-800 dark:text-slate-100 truncate">{rvHostName(h)}</div>
+                        <div className="text-slate-500 dark:text-slate-400 truncate">{oem}</div>
+                        <div className="text-slate-600 dark:text-slate-300 truncate">{match ? `VCG: ${match.series}` : 'Not in VCG CPUs sheet'}</div>
+                      </div>
+                    );
+                  })}
+                  {scopedHosts.length > 30 && <div className="text-[10px] text-slate-400 mt-1">{scopedHosts.length - 30} more hosts</div>}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-black text-slate-800 dark:text-slate-100 mb-2">Clusters in scope</h4>
+              <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-950 text-[10px] uppercase tracking-widest text-slate-500">
+                    <tr>
+                      <th className="text-left p-2">Cluster</th>
+                      <th className="text-right p-2">Hosts</th>
+                      <th className="text-right p-2">VMs</th>
+                      <th className="text-right p-2">Cores</th>
+                      <th className="text-right p-2">RAM GiB</th>
+                      <th className="text-left p-2">OEM models</th>
+                      <th className="text-left p-2">CPU / VCG series</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clusterRows.map(row => {
+                      const cpuSample = [...row.cpus][0] || '';
+                      const match = matchCpuToVcgSeries(cpuSample, cpuRows);
+                      return (
+                        <tr key={row.name} className="border-t border-slate-100 dark:border-slate-800">
+                          <td className="p-2 font-bold">{row.name}</td>
+                          <td className="p-2 text-right font-mono">{row.hosts}</td>
+                          <td className="p-2 text-right font-mono">{row.vms || 0}</td>
+                          <td className="p-2 text-right font-mono">{row.cores.toLocaleString()}</td>
+                          <td className="p-2 text-right font-mono">{Math.round(row.ramGB).toLocaleString()}</td>
+                          <td className="p-2 text-[11px] text-slate-600 dark:text-slate-300">{[...row.oem].slice(0, 2).join(' · ') || '—'}</td>
+                          <td className="p-2 text-[11px] text-slate-600 dark:text-slate-300">{match ? match.series : (cpuSample || '—')}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         );
       };
 
@@ -10384,7 +10875,7 @@ const architectureMath = useMemo(() => {
                <div className="flex flex-wrap gap-3 justify-between items-end mb-6 shrink-0">
                   <div className="min-w-0 flex-1 basis-[12rem]">
                     <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Phase 1: Readiness & Validation</h2>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">HCL and Software Config checks for VCF upgrades.</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Start with the estate snapshot and scope, then the HCL verdicts that block or threaten a VCF 9.1 move.</p>
                   </div>
                   <button onClick={exportReadiness} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded shadow flex items-center transition whitespace-nowrap shrink-0 ml-auto">
                     <svg className="w-4 h-4 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
@@ -10393,24 +10884,34 @@ const architectureMath = useMemo(() => {
                </div>
                
                {!rawRvData ? (
-                  <div className="bg-white dark:bg-slate-900 p-12 text-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 shadow-sm">
+                  <div
+                    className={`inventory-drop-target bg-white dark:bg-slate-900 p-12 text-center rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 shadow-sm ${isDragOver ? 'dragover' : ''}`}
+                    onDragOver={handleInventoryDragOver}
+                    onDragLeave={handleInventoryDragLeave}
+                    onDrop={handleInventoryDrop}
+                  >
                       <IconServer className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-                      <p>Readiness Engine loaded. Please upload RVTools files to begin.</p>
+                      <p className="font-bold text-slate-700 dark:text-slate-200">Drop RVTools .xlsx, .csv, or .zip here</p>
+                      <p className="mt-2 text-sm">Or use Initialize Platform in the header. ZIP archives of RVTools tabs are accepted.</p>
                   </div>
                ) : (
                   <div className="flex-1 flex flex-col min-h-0">
-                     <div className="flex items-center space-x-3 bg-white dark:bg-slate-900 p-3 rounded-lg shadow-sm border w-fit mb-4 shrink-0">
+                     {readinessTab !== 'estate' && (
+                     <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 p-3 rounded-lg shadow-sm border mb-4 shrink-0">
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Asset Filter:</span>
-                        <select value={viewFilter} onChange={(e) => setViewFilter(e.target.value)} className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs rounded focus:ring-blue-500 focus:border-blue-500 block p-1.5 cursor-pointer font-bold">
+                        <select value={viewFilter} onChange={(e) => { setViewFilter(e.target.value); setTablePage(0); }} className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs rounded focus:ring-blue-500 focus:border-blue-500 block p-1.5 cursor-pointer font-bold">
                            <option value="ALL">Show All Assets</option>
                            <option value="ISSUES">Show All Issues (Red & Yellow)</option>
                            <option value="RED">Show Unsupported Only (Red)</option>
                            <option value="YELLOW">Show Manual Checks Only (Yellow)</option>
                         </select>
+                        <input type="search" value={readinessSearch} onChange={(e) => { setReadinessSearch(e.target.value); setTablePage(0); }} placeholder="Search name, cluster, host, details…" className="min-w-[16rem] flex-1 border border-slate-300 dark:border-slate-600 rounded px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100" />
                      </div>
+                     )}
 
                      <div className="flex flex-wrap gap-2 border-b border-gray-300 dark:border-slate-600 mb-6 pb-2 shrink-0">
                         {[
+                           { id: 'estate', label: `Estate Snapshot` },
                            { id: 'summary', label: `Dashboard` },
                            { id: 'cpus', label: `CPUs` },
                            { id: 'clusters', label: `Cluster DRS` },
@@ -10420,18 +10921,26 @@ const architectureMath = useMemo(() => {
                            { id: 'vmTools', label: `VM Tools` },
                            { id: 'vNics', label: `VM Network` },
                            { id: 'snapshots', label: `VM Snapshots` },
-                           { id: 'cdDrives', label: `VM CD-DVDs` },
+                           { id: 'cdDrives', label: `VM CD / Floppy` },
                            { id: 'datastores', label: `Datastores` },
                            { id: 'dvSwitches', label: `vDS Switches` },
                            { id: 'ioDevices', label: `HBA(s)` }
                         ].map(tab => (
-                           <button key={tab.id} onClick={() => setReadinessTab(tab.id)} className={`py-2 px-4 font-semibold text-sm rounded transition-colors duration-200 whitespace-nowrap ${readinessTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 hover:bg-slate-100'}`}>
+                           <button key={tab.id} onClick={() => { setReadinessTab(tab.id); setTablePage(0); }} className={`py-2 px-4 font-semibold text-sm rounded transition-colors duration-200 whitespace-nowrap inline-flex items-center gap-2 ${readinessTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 hover:bg-slate-100'}`}>
                               {tab.label}
+                              {tab.id !== 'summary' && tab.id !== 'estate' && (() => {
+                                const rows = readinessResults[tab.id] || [];
+                                const issues = rows.filter(r => r.status === 'red' || r.status === 'yellow').length;
+                                const crit = rows.filter(r => r.status === 'red').length;
+                                if (!issues) return null;
+                                return <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${crit ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'}`}>{issues}</span>;
+                              })()}
                            </button>
                         ))}
                      </div>
 
                      <div className="bg-white dark:bg-slate-900 p-6 rounded shadow-sm border border-gray-200 dark:border-slate-700 overflow-y-auto">
+                        {readinessTab === 'estate' && renderEstateSnapshot()}
                         {readinessTab === 'summary' && (
                            <div>
                               <h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">High-Level Infrastructure Readiness</h3>
@@ -10462,7 +10971,7 @@ const architectureMath = useMemo(() => {
                               </div>
                            </div>
                         )}
-                        {readinessTab === 'cpus' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Processor (CPU) Compatibility</h3>{renderTable(readinessResults.cpus, ['Asset Name', 'Cluster', 'Host(s)', 'CPU Model', 'Readiness'], 'cpus')}</div>}
+                        {readinessTab === 'cpus' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Processor (CPU) Compatibility</h3><p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Matched to the VCG <span className="font-bold">CPUs</span> sheet (series + supported releases). OEM vendor/model is RVTools evidence — that pack has no server-model EOS table.</p>{renderTable(readinessResults.cpus, ['Asset Name', 'Cluster', 'Host(s)', 'CPU / VCG series', 'VCG Series', 'Readiness'], 'cpus', true)}</div>}
                         {readinessTab === 'clusters' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Cluster Automation (DRS Fully Automated Required)</h3>{renderTable(readinessResults.clusters, ['Asset Name', 'Cluster', 'Host(s)', 'DRS Settings', 'Readiness'], 'clusters')}</div>}
                         {readinessTab === 'hostConfig' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">ESXi Host NTP & DNS Configuration</h3>{renderTable(readinessResults.hostConfig, ['Asset Name', 'Cluster', 'Host(s)', 'NTP and DNS Details', 'Readiness'], 'hostConfig')}</div>}
                         {readinessTab === 'guestOs' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Virtual Machine Guest OS Compatibility</h3>{renderTable(readinessResults.guestOs, ['Asset Name', 'Cluster', 'Host(s)', 'Configured Guest OS', 'VCG Tier', 'Readiness'], 'guestOs', true)}</div>}
@@ -10470,7 +10979,7 @@ const architectureMath = useMemo(() => {
                         {readinessTab === 'vmTools' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">VMware Tools Version (Min v12.x)</h3>{renderTable(readinessResults.vmTools, ['Asset Name', 'Cluster', 'Host(s)', 'Installed Tools Version', 'Upgrade Required?'], 'vmTools')}</div>}
                         {readinessTab === 'vNics' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Virtual Network Adapters (vNICs)</h3>{renderTable(readinessResults.vNics, ['Asset Name', 'Cluster', 'Host(s)', 'Virtual Adapter Type', 'Readiness'], 'vNics')}</div>}
                         {readinessTab === 'snapshots' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Active VM Snapshots (&gt; 7 Days is Critical)</h3>{renderTable(readinessResults.snapshots, ['Asset Name', 'Cluster', 'Host(s)', 'Snapshot Details', 'Readiness'], 'snapshots')}</div>}
-                        {readinessTab === 'cdDrives' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Connected CD/DVD Drives (vMotion Blocker)</h3>{renderTable(readinessResults.cdDrives, ['Asset Name', 'Cluster', 'Host(s)', 'Drive Details', 'Readiness'], 'cdDrives')}</div>}
+                        {readinessTab === 'cdDrives' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Connected CD/DVD and Floppy Drives (vMotion Blocker)</h3>{renderTable(readinessResults.cdDrives, ['Asset Name', 'Cluster', 'Host(s)', 'Drive Details', 'Readiness'], 'cdDrives')}</div>}
                         {readinessTab === 'datastores' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Datastore Configuration (VMFS 5/6 Supported, Min 20% Free)</h3>{renderTable(readinessResults.datastores, ['Asset Name', 'Cluster', 'Host(s)', 'Configuration Details', 'Readiness'], 'datastores')}</div>}
                         {readinessTab === 'dvSwitches' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Distributed Switches (Min vDS 7.x)</h3>{renderTable(readinessResults.dvSwitches, ['Asset Name', 'Cluster', 'Host(s)', 'Switch Version', 'Readiness'], 'dvSwitches')}</div>}
                         {readinessTab === 'ioDevices' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Host Bus Adapters (vHBA)</h3>{renderTable(readinessResults.ioDevices, ['Asset Name', 'Cluster', 'Host(s)', 'HBA Model', 'Readiness'], 'ioDevices')}</div>}
@@ -12361,11 +12870,25 @@ const architectureMath = useMemo(() => {
          const claimedEdgeClusters = siteProfiles.flatMap(p => p.rvClusters || []);
          const wldClusters = allClusters.filter(c => (isGf || c !== fleetMgmtCluster) && !multiInstanceClusters.includes(c) && !claimedEdgeClusters.includes(c));
 
+         const clusterToVc = {};
+         if (rawRvData) {
+             rawRvData.vHost.forEach(h => {
+                 const vc = getCol(h, ['visdkserver', 'viserver', 'vcenter', 'vcenterserver', 'virtualcenter', 'server']) || 'Unassigned_vCenter';
+                 const clName = getCol(h, ['cluster']);
+                 if (clName && !clusterToVc[clName]) clusterToVc[clName] = vc;
+             });
+         }
+         const uniqueVcenters = [...new Set(Object.values(clusterToVc))].sort((a, b) => String(a).localeCompare(String(b)));
+         const vcentersForClusters = (clusters) => [...new Set((clusters || []).map(c => clusterToVc[c]).filter(Boolean))];
+
          let mappedWlds = [];
          
          // 2. WLD Mapping Engine (with AUTO_PREFIX)
          if (isGf && !rawRvData) {
-             mappedWlds = [{ name: 'WLD 1 (vCenter 1)', items: ['WLD Cluster 1'] }];
+             const n = Math.max(0, Math.round(Number(wlDomainCount) || 0));
+             mappedWlds = n === 0
+                ? []
+                : Array.from({ length: n }).map((_, i) => ({ name: `WLD ${i + 1}`, items: [`WLD Cluster ${i + 1}`], vcenter: `vCenter ${i + 1}` }));
          } else if (fleetWldMapping === 'AUTO_PREFIX') {
              const prefixGroups = {};
              wldClusters.forEach(c => {
@@ -12373,24 +12896,19 @@ const architectureMath = useMemo(() => {
                  if (!prefixGroups[prefix]) prefixGroups[prefix] = [];
                  prefixGroups[prefix].push(c);
              });
-             mappedWlds = Object.keys(prefixGroups).map(prefix => ({ name: `WLD: ${prefix}`, items: prefixGroups[prefix] }));
+             mappedWlds = Object.keys(prefixGroups).map(prefix => ({ name: `WLD: ${prefix}`, items: prefixGroups[prefix], vcenter: vcentersForClusters(prefixGroups[prefix]).join(', ') || '—' }));
          } else if (fleetWldMapping === 'ONE_PER_CLUSTER') {
-             mappedWlds = wldClusters.map(c => ({ name: `WLD: ${c}`, items: [c] }));
+             mappedWlds = wldClusters.map(c => ({ name: `WLD: ${c}`, items: [c], vcenter: clusterToVc[c] || '—' }));
          } else if (fleetWldMapping === 'ONE_PER_VCENTER') {
              const vcMap = {};
-             if (rawRvData) {
-                 rawRvData.vHost.forEach(h => {
-                     const vc = getCol(h, ['visdkserver', 'viserver', 'vcenter', 'vcenterserver', 'virtualcenter', 'server']) || 'Unassigned_vCenter';
-                     const clName = getCol(h, ['cluster']);
-                     if (clName && wldClusters.includes(clName)) {
-                         if (!vcMap[vc]) vcMap[vc] = new Set();
-                         vcMap[vc].add(clName);
-                     }
-                 });
-             }
-             mappedWlds = Object.keys(vcMap).map(vc => ({ name: `vCenter: ${vc.split('.')[0]}`, items: Array.from(vcMap[vc]).sort() }));
+             wldClusters.forEach(clName => {
+                 const vc = clusterToVc[clName] || 'Unassigned_vCenter';
+                 if (!vcMap[vc]) vcMap[vc] = new Set();
+                 vcMap[vc].add(clName);
+             });
+             mappedWlds = Object.keys(vcMap).sort((a, b) => String(a).localeCompare(String(b))).map(vc => ({ name: `vCenter: ${String(vc).split('.')[0]}`, items: Array.from(vcMap[vc]).sort(), vcenter: vc }));
          } else {
-             mappedWlds = [{ name: `WLD: Shared Fleet`, items: wldClusters }];
+             mappedWlds = wldClusters.length ? [{ name: `WLD: Shared Fleet`, items: wldClusters, vcenter: vcentersForClusters(wldClusters).join(', ') || '—' }] : [];
          }
 
          // Combine WLDs and Edge Profiles for the UI Grid
@@ -12679,7 +13197,7 @@ const architectureMath = useMemo(() => {
                           <span className="mt-1 text-slate-400 dark:text-slate-500 text-xs font-black transition-transform group-open:rotate-90">▶</span>
                           <div>
                             <h3 className="font-black text-slate-900 dark:text-slate-100">Fleet and instance topology</h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Set management source, VCF instance count, workload-domain mapping, site topology, and edge appliance placement. These drive the architecture drawing and ADR export.</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Set management source, VCF instance count, vCenter / workload-domain mapping, site topology, and edge appliance placement. These drive the architecture drawing and ADR export.</p>
                           </div>
                         </div>
                         <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{hldInstanceStrategy === 'MULTI_INSTANCE' ? 'Multiple VCF instances' : 'One VCF instance'} · {fleetWldMapping.replaceAll('_', ' ')}</span>
@@ -12746,6 +13264,60 @@ const architectureMath = useMemo(() => {
                               <option value="AUTO_PREFIX">Smart Map: Auto-Group by Prefix</option><option value="ONE_PER_CLUSTER">Import: Map 1 WLD per Cluster</option><option value="POOL_ALL">Import: Pool all into 1 WLD</option><option value="ONE_PER_VCENTER">Import: Map by vCenter</option>
                            </select>
                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Proposes vCenter and workload-domain boundaries. This affects lifecycle blast radius, scale and operational ownership.</p>
+                           {isGf && !rawRvData && (
+                              <div className="mt-3">
+                                 <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 block">Workload domain / vCenter count</label>
+                                 <SizerNumberInput value={wlDomainCount} onCommit={commitWlDomainCount} min={0} className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-950" />
+                                 <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">0 = consolidated under the management vCenter. Each count ≥ 1 adds a dedicated WLD vCenter in the drawing and Placement Engine catalog.</p>
+                              </div>
+                           )}
+                        </div>
+                        <div className="xl:col-span-2 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 p-3">
+                           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
+                              <div>
+                                 <div className="text-[10px] font-black text-indigo-800 dark:text-indigo-300 uppercase tracking-widest">vCenter / WLD mapping</div>
+                                 <p className="text-[10px] text-indigo-700 dark:text-indigo-300 mt-0.5">
+                                    {isGf && !rawRvData
+                                       ? (mappedWlds.length === 0 ? 'Consolidated — no dedicated WLD vCenters' : `${mappedWlds.length} planned WLD vCenter${mappedWlds.length === 1 ? '' : 's'}`)
+                                       : `${uniqueVcenters.length} discovered vCenter${uniqueVcenters.length === 1 ? '' : 's'} · ${mappedWlds.length} proposed domain${mappedWlds.length === 1 ? '' : 's'}`}
+                                 </p>
+                              </div>
+                              {!(isGf && !rawRvData) && mappedWlds.length !== wlDomainCount && (
+                                 <button type="button" onClick={() => commitWlDomainCount(mappedWlds.length)} className="text-[10px] font-black text-white bg-indigo-600 hover:bg-indigo-700 px-2.5 py-1.5 rounded whitespace-nowrap">
+                                    Apply {mappedWlds.length} WLD vCenter{mappedWlds.length === 1 ? '' : 's'} to Placement
+                                 </button>
+                              )}
+                           </div>
+                           {mappedWlds.length === 0 ? (
+                              <p className="text-[10px] text-indigo-800 dark:text-indigo-200">No dedicated WLD vCenters. Tenant clusters stay under the management-domain vCenter.</p>
+                           ) : (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-56 overflow-y-auto">
+                                 {mappedWlds.map(wld => (
+                                    <div key={wld.name} className="rounded border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 p-2">
+                                       <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate" title={wld.name}>{wld.name}</div>
+                                       <div className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 mt-0.5 truncate" title={wld.vcenter || ''}>{wld.vcenter && wld.vcenter !== '—' ? wld.vcenter : 'WLD vCenter Server'}</div>
+                                       <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{(wld.items || []).join(', ') || '—'}</div>
+                                    </div>
+                                 ))}
+                              </div>
+                           )}
+                           {uniqueVcenters.length > 0 && (
+                              <details className="mt-2">
+                                 <summary className="cursor-pointer text-[10px] font-bold text-indigo-800 dark:text-indigo-300">Discovered vCenters from RVTools ({uniqueVcenters.length})</summary>
+                                 <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1.5">
+                                    {uniqueVcenters.map(vc => {
+                                       const clusters = Object.keys(clusterToVc).filter(c => clusterToVc[c] === vc).sort();
+                                       return (
+                                          <div key={vc} className="text-[10px] text-slate-600 dark:text-slate-300">
+                                             <span className="font-black text-slate-800 dark:text-slate-100">{vc}</span>
+                                             <span className="text-slate-400 dark:text-slate-500"> · {clusters.length} cluster{clusters.length === 1 ? '' : 's'}</span>
+                                             <div className="text-slate-500 dark:text-slate-400">{clusters.join(', ')}</div>
+                                          </div>
+                                       );
+                                    })}
+                                 </div>
+                              </details>
+                           )}
                         </div>
                         <div>
                            <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Site Topology</label>
@@ -12815,6 +13387,18 @@ const architectureMath = useMemo(() => {
                                  <input type="checkbox" className="w-4 h-4 text-red-600 dark:text-red-400 rounded" checked={includeLegacyInDrawing} onChange={(e) => setIncludeLegacyInDrawing(e.target.checked)} /> Show retained vSphere 8 clusters
                               </label>
                               <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 ml-6">{legacyClusters.length} cluster(s) pinned to vSphere 8 in the Upgrade Roadmap.</p>
+                           </div>
+                        )}
+                        {effectiveInstances.length > 1 && activeFleetDomains.length > 0 && (
+                           <div className="xl:col-span-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3">
+                              <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">Map domains to VCF instances</div>
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">{activeFleetDomains.map((domain, index) => <label key={domain.name} className="grid grid-cols-[1fr_180px] items-center gap-2 text-[10px] font-bold text-slate-700 dark:text-slate-200"><span className="truncate">{domain.name}</span><select className="border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 bg-white dark:bg-slate-900" value={domainInstanceAssignments[domain.name] || effectiveInstances[index % effectiveInstances.length]} onChange={(e) => setDomainInstanceAssignments(current => ({ ...current, [domain.name]: e.target.value }))}>{effectiveInstances.map(instance => <option key={instance} value={instance}>{instance}</option>)}</select></label>)}</div>
+                           </div>
+                        )}
+                        {effectiveFleetCount > 1 && effectiveInstances.length > 1 && (
+                           <div className="xl:col-span-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3">
+                              <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">Map VCF instances to fleets</div>
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">{effectiveInstances.map((instance, index) => <label key={instance} className="grid grid-cols-[1fr_140px] items-center gap-2 text-[10px] font-bold text-slate-700 dark:text-slate-200"><span className="truncate">{instance}</span><select className="border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 bg-white dark:bg-slate-900" value={instanceFleetAssignments[instance] || `Fleet ${(index % effectiveFleetCount) + 1}`} onChange={(e) => setInstanceFleetAssignments(current => ({ ...current, [instance]: e.target.value }))}>{fleetGroups.map(group => <option key={group.id} value={group.id}>{group.id}</option>)}</select></label>)}</div>
                            </div>
                         )}
                      </div>
@@ -13112,7 +13696,7 @@ const architectureMath = useMemo(() => {
                                        <h3 className={`font-bold ${tone.title} text-sm mb-1 mt-2`}>{wld.isLegacy ? (wld.items.length <= 3 ? wld.items.join(', ') : `${wld.items.length} clusters`) : wld.items.join(', ')}</h3>
                                        <p className={`text-[10px] ${tone.meta} font-bold uppercase tracking-widest mb-4`}>{wld.isLegacy ? 'Not part of VCF 9.1 fleet' : wld.isEdge ? wld.patternId : `${hldStorageProto.replace('_', ' ')} | ${hldIsolation} ISOLATION`}</p>
                                        <div className="space-y-2 mt-auto">
-                                          <div className={`bg-white dark:bg-slate-900 border ${tone.row} p-2 rounded shadow-sm flex items-center gap-2`}><IconServer className={`${tone.icon} w-4 h-4`} /><span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{wld.isLegacy ? 'Legacy vCenter(s)' : wld.isEdge ? 'Edge Infrastructure' : 'WLD vCenter Server'}</span></div>
+                                          <div className={`bg-white dark:bg-slate-900 border ${tone.row} p-2 rounded shadow-sm flex items-center gap-2`}><IconServer className={`${tone.icon} w-4 h-4`} /><span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{wld.isLegacy ? 'Legacy vCenter(s)' : wld.isEdge ? 'Edge Infrastructure' : (wld.vcenter && wld.vcenter !== '—' ? wld.vcenter : 'WLD vCenter Server')}</span></div>
                                           <div className={`${tone.footer} border p-2 rounded shadow-sm flex items-center gap-2 mt-2`}><IconGrid className={`${tone.meta} w-4 h-4`} /><span className={`text-xs font-bold ${tone.footerText}`}>{wld.isLegacy ? 'vSphere 8 (Retained)' : wld.isEdge ? 'Edge Workloads' : 'Tenant Workloads'}</span></div>
                                           {wld.isEdge && <button type="button" onClick={() => setActiveModule('EDGE')} className="text-[10px] font-bold text-teal-800 dark:text-teal-300 hover:underline mt-2 text-left">Open Edge Architecture →</button>}
                                           {!wld.isEdge && !wld.isLegacy && hldStorageProto.includes('VSAN') && <button type="button" onClick={() => setActiveModule('VSAN_SIZER')} className="text-[10px] font-bold text-blue-800 dark:text-blue-300 hover:underline mt-2 text-left">Open vSAN ESA Sizer →</button>}
@@ -13199,11 +13783,16 @@ const architectureMath = useMemo(() => {
           {renderSidebar()}
           
           <div className="flex-1 flex flex-col h-full bg-slate-50 dark:bg-slate-950 relative min-w-0">
-            <div className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-8 shrink-0 z-10 shadow-sm">
+            <div
+              className={`min-h-16 py-2 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-8 shrink-0 z-10 shadow-sm inventory-drop-target ${isDragOver ? 'dragover' : ''}`}
+              onDragOver={handleInventoryDragOver}
+              onDragLeave={handleInventoryDragLeave}
+              onDrop={handleInventoryDrop}
+            >
                {!rawRvData ? (
                   <div className="flex items-center gap-4 flex-1 min-w-0">
                      <span className="text-sm font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">Initialize Platform:</span>
-                     <input type="file" multiple disabled={loadingVcg} accept=".csv, .xlsx, .xlsm" onChange={handleFileUpload} className="block w-full max-w-xl text-sm text-slate-500 dark:text-slate-400 file:mr-4 file:py-1.5 file:px-4 file:rounded file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-950 dark:file:text-blue-300 cursor-pointer" />
+                     <input type="file" multiple disabled={loadingVcg} accept=".csv,.xlsx,.xlsm,.zip" onChange={handleFileUpload} className="block w-full max-w-xl text-sm text-slate-500 dark:text-slate-400 file:mr-4 file:py-1.5 file:px-4 file:rounded file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-950 dark:file:text-blue-300 cursor-pointer" />
                      {(coreDataError || status) && (
                        <div className={`text-xs font-medium ml-auto max-w-md ${coreDataError ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
                          {coreDataError || status}
@@ -13220,6 +13809,17 @@ const architectureMath = useMemo(() => {
                         <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-full border border-emerald-100 dark:border-emerald-800 whitespace-nowrap">
                            <IconCheck /> RVTools loaded
                         </div>
+                        {estateRibbon && (
+                          <div className="hidden xl:flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                            <span className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800">{estateRibbon.hosts.toLocaleString()}{estateRibbon.hostTotal !== estateRibbon.hosts ? `/${estateRibbon.hostTotal}` : ''} hosts</span>
+                            <span className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800">{estateRibbon.vms.toLocaleString()}{estateRibbon.vmTotal !== estateRibbon.vms ? `/${estateRibbon.vmTotal}` : ''} VMs</span>
+                            <span className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800">{estateRibbon.clusters.toLocaleString()} clusters</span>
+                            <span className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800">{estateRibbon.vcenters.toLocaleString()} vCenters</span>
+                            {estateRibbon.excluded > 0 && <span className="px-2 py-1 rounded bg-slate-700 text-white">{estateRibbon.excluded.toLocaleString()} out</span>}
+                            {estateRibbon.red > 0 && <span className="px-2 py-1 rounded bg-red-600 text-white">{estateRibbon.red.toLocaleString()} block</span>}
+                            {estateRibbon.yellow > 0 && <span className="px-2 py-1 rounded bg-amber-500 text-white">{estateRibbon.yellow.toLocaleString()} review</span>}
+                          </div>
+                        )}
                      </div>
                      {coreDataError && (
                        <div className="text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded px-3 py-1.5 max-w-2xl">
@@ -13260,6 +13860,14 @@ const architectureMath = useMemo(() => {
                {activeModule === 'DSM_PLANNER' && <DsmPlanner onDecisionChange={setDsmDecision} />}
                {activeModule === 'VDEFEND_COVERAGE' && <VdefendCoverage rawRvData={rawRvData} appNamingCatalog={vcgData.appNamingCatalog || vcgData['App Naming Catalog']} securityServices={architectDecisionInputs.hldSecurityServices} onDecisionChange={setVdefendDecision} />}
             </div>
+
+            {coreModuleIndex >= 0 && (
+              <div className="shrink-0 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-2 flex items-center justify-between gap-3">
+                <button type="button" disabled={coreModuleIndex === 0} onClick={() => setActiveModule(CORE_MODULE_ORDER[coreModuleIndex - 1])} className="text-xs font-bold px-3 py-1.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-40">← Back</button>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Step {coreModuleIndex + 1} of {CORE_MODULE_ORDER.length} · {activeModuleMeta[0]}</span>
+                <button type="button" disabled={coreModuleIndex === CORE_MODULE_ORDER.length - 1} onClick={() => setActiveModule(CORE_MODULE_ORDER[coreModuleIndex + 1])} className="text-xs font-bold px-3 py-1.5 rounded bg-blue-600 text-white disabled:opacity-40">Next →</button>
+              </div>
+            )}
 
             <footer className="app-disclaimer shrink-0 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-2 text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
               <details>

@@ -455,3 +455,37 @@
     .app-light .friendly-sizer [class*="from-blue-950"] h3,
     .app-light .friendly-sizer [class*="from-slate-900"] h3 { color: #ffffff !important; }
     .app-light .friendly-sizer [class*="from-slate-900"] .text-slate-300 { color: #cbd5e1 !important; }
+
+    button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+      outline: 2px solid #2563eb;
+      outline-offset: 2px;
+    }
+    .inventory-drop-target.dragover {
+      outline: 2px dashed #2563eb;
+      outline-offset: -4px;
+      background: #eff6ff;
+    }
+    .app-dark .inventory-drop-target.dragover {
+      background: rgba(37, 99, 235, 0.18);
+    }
+    .scope-tree-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.2rem 0.4rem;
+      border-radius: 0.25rem;
+    }
+    .scope-tree-row:hover { background: rgba(148, 163, 184, 0.12); }
+    .scope-tree-kids {
+      margin-left: 0.9rem;
+      border-left: 1px dashed #cbd5e1;
+      padding-left: 0.35rem;
+    }
+    .app-dark .scope-tree-kids { border-left-color: #334155; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+      }
+    }

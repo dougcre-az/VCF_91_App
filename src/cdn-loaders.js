@@ -30,4 +30,11 @@
       return g.html2canvas;
     });
   };
+  g.ensureJszip = function () {
+    if (g.JSZip) return Promise.resolve(g.JSZip);
+    return loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js').then(function () {
+      if (!g.JSZip) throw new Error('JSZip failed to initialize');
+      return g.JSZip;
+    });
+  };
 })(window);
