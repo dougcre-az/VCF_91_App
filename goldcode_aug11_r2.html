@@ -7922,6 +7922,8 @@ const VCFApp = () => {
         firewall: 'PALO',
         loadbalancer: 'F5',
         backup: 'VEEAM',
+        operations: 'TURBO',
+        automation: 'ANSIBLE',
       });
       const [valueLanesOn, setValueLanesOn] = useState({
         hypervisor: true,
@@ -7931,6 +7933,8 @@ const VCFApp = () => {
         firewall: false,
         loadbalancer: false,
         backup: false,
+        operations: false,
+        automation: false,
       });
       const [valueLaneSpend, setValueLaneSpend] = useState({
         hypervisor: '',
@@ -7940,6 +7944,8 @@ const VCFApp = () => {
         firewall: '',
         loadbalancer: '',
         backup: '',
+        operations: '',
+        automation: '',
       });
       const [valueStoragePlay, setValueStoragePlay] = useState('HCI_DEFEND');
       const [valuePctSource, setValuePctSource] = useState('PLANNING');
@@ -14498,6 +14504,8 @@ const architectureMath = useMemo(() => {
           firewall: advancedSec,
           loadbalancer: !!derivedAvi,
           backup: recoveryInDesign,
+          operations: !!complianceScope.OPS || hosts > 0 || vms > 0,
+          automation: !!derivedAuto || !!complianceScope.AUTO,
         };
         const laneEvidence = {
           hypervisor: [
@@ -14541,15 +14549,43 @@ const architectureMath = useMemo(() => {
             architectDecisionInputs.hldProtectionModel && architectDecisionInputs.hldProtectionModel !== 'BACKUP' ? architectDecisionInputs.hldProtectionModel.replaceAll('_', ' ') : null,
             architectDecisionInputs.hldRecoveryObjectives && architectDecisionInputs.hldRecoveryObjectives !== 'UNRESOLVED' ? architectDecisionInputs.hldRecoveryObjectives.replaceAll('_', ' ') : null,
           ].filter(Boolean),
+          operations: [
+            vms ? `${vms.toLocaleString()} VMs` : null,
+            hosts ? `${hosts.toLocaleString()} hosts` : null,
+            clusters ? `${clusters.toLocaleString()} clusters` : null,
+            complianceScope.OPS ? 'VCF Operations in scope' : null,
+          ].filter(Boolean),
+          automation: [
+            derivedAuto ? 'VCF Automation in Control Grid' : null,
+            hosts ? `${hosts.toLocaleString()} hosts` : null,
+            vms ? `${vms.toLocaleString()} VMs (guest patch estate)` : null,
+            complianceScope.AUTO ? 'Automation scope on' : null,
+          ].filter(Boolean),
         };
+        const opsVendor = valueCompetitors.operations || 'TURBO';
+        const autoVendor = valueCompetitors.automation || 'ANSIBLE';
+        const opsSpendEst = (() => {
+          if (!(vms > 0 || hosts > 0)) return 0;
+          if (opsVendor === 'SOLARWINDS') return Math.round((hosts + vms) * 8 * 12);
+          if (opsVendor === 'DYNATRACE') return Math.round(vms * 29 * 12);
+          if (opsVendor === 'DATADOG') return Math.round(vms * 15 * 12);
+          return Math.round(vms * 190);
+        })();
+        const autoSpendEst = (() => {
+          if (!(vms > 0 || hosts > 0)) return 0;
+          if (autoVendor === 'MICROSOFT') return Math.round(Math.max(hosts, 1) * 3607 * 0.25);
+          return Math.round((hosts + vms) * 175);
+        })();
         const estSpend = {
           hypervisor: 0,
           containers: 0,
-          storage: totalGb > 0 && valueStoragePlay !== 'HCI_DEFEND' ? Math.round(totalGb * 2 * 0.15) : 0,
-          networking: 0,
-          firewall: 0,
-          loadbalancer: 0,
-          backup: 0,
+          storage: totalGb > 0 && valueStoragePlay !== 'HCI_DEFEND' ? Math.round(totalGb * 2 * 0.15) : (totalVcfCores > 0 && valueStoragePlay === 'HCI_DEFEND' ? Math.round(totalVcfCores * 605) : 0),
+          networking: hosts > 0 ? Math.round(Math.max(2, Math.ceil(hosts / 6)) * 6000) : 0,
+          firewall: vms > 0 ? Math.round(Math.max(2, Math.ceil(vms / 400)) * 48170 * 0.2) : 0,
+          loadbalancer: vms > 0 ? Math.round(Math.max(2, Math.ceil(vms / 500)) * 87000 * 0.2) : 0,
+          backup: vms > 0 ? Math.round(vms * 250) : 0,
+          operations: opsSpendEst,
+          automation: autoSpendEst,
         };
         const catalogs = {
           hypervisor: [
@@ -14607,6 +14643,16 @@ const architectureMath = useMemo(() => {
             { value: 'COHESITY', label: 'Cohesity' },
             { value: 'DELL_DPS', label: 'Dell DPS / PowerProtect' },
           ],
+          operations: [
+            { value: 'TURBO', label: 'IBM Turbonomic' },
+            { value: 'SOLARWINDS', label: 'SolarWinds Observability Self-Hosted' },
+            { value: 'DYNATRACE', label: 'Dynatrace' },
+            { value: 'DATADOG', label: 'Datadog Infrastructure Pro' },
+          ],
+          automation: [
+            { value: 'ANSIBLE', label: 'Ansible Automation Platform' },
+            { value: 'MICROSOFT', label: 'Microsoft Configuration Manager' },
+          ],
         };
         const fallbackPct = {
           hypervisor: { 3: 22, 5: 28, 7: 32 },
@@ -14616,6 +14662,8 @@ const architectureMath = useMemo(() => {
           firewall: { 3: 35, 5: 42, 7: 48 },
           loadbalancer: { 3: 28, 5: 34, 7: 38 },
           backup: { 3: 20, 5: 26, 7: 30 },
+          operations: { 3: 30, 5: 36, 7: 40 },
+          automation: { 3: 40, 5: 48, 7: 52 },
         };
         const vvmDirectionalPct = {
           hypervisor: { 3: 26, 5: 32, 7: 36, source: 'VVM/PCMO compute category (MAVERIK-shaped 5-yr, haircut to 3/7)' },
@@ -14726,6 +14774,16 @@ const architectureMath = useMemo(() => {
             whyOut: 'Optional. Backup is often coexistence — check only when a second DR/ransomware platform is being displaced.',
             story: 'IDC (Mar 2024) cites 75% faster downtime resolution with Live Recovery. Conservative cost-avoidance haircut vs Veeam, Rubrik, Commvault, Cohesity, Dell DPS.',
           },
+          {
+            id: 'operations', title: 'Operations / monitoring', vmware: 'VCF Operations',
+            whyOut: 'Optional. Check to model Turbonomic / SolarWinds / Dynatrace / Datadog takeout vs VCF Operations.',
+            story: 'VCF Operations vs a second monitoring or rightsizing stack. Planning defaults: Turbonomic ≈ $190/VM/yr (AWS Marketplace), SolarWinds ≈ $8/node/mo, Dynatrace ≈ $29/host/mo, Datadog ≈ $15/host/mo. Override with the invoice.',
+          },
+          {
+            id: 'automation', title: 'Automation / patching', vmware: 'VCF Automation + Salt',
+            whyOut: 'Optional. Check to model Ansible AAP or Microsoft Configuration Manager vs VCF Automation / Salt lifecycle.',
+            story: 'Salt Stack is VMware’s lifecycle tool for ESXi, SDDC Manager, NSX, and VCF management VMs. Compete with Ansible Automation Platform (~$175/managed node/yr) or Microsoft Configuration Manager (System Center Datacenter × 25% SA). Forrester TEI of VCF: −35% patching effort.',
+          },
         ].map((lane) => {
           const vendor = valueCompetitors[lane.id];
           const play = lane.id === 'storage' ? valueStoragePlay : 'ANY';
@@ -14809,9 +14867,13 @@ const architectureMath = useMemo(() => {
           setValueLanesOn({ ...hldSuggests, hypervisor: true });
           setValueLaborOn(true);
           setValueBizOn(true);
-          if (estSpend.storage && !parseSpend(valueLaneSpend.storage) && hldSuggests.storage) {
-            setValueLaneSpend((current) => ({ ...current, storage: String(estSpend.storage) }));
-          }
+          setValueLaneSpend((current) => {
+            const next = { ...current };
+            ['storage', 'operations', 'automation', 'networking', 'firewall', 'loadbalancer', 'backup'].forEach((id) => {
+              if (estSpend[id] > 0 && !parseSpend(next[id]) && hldSuggests[id]) next[id] = String(estSpend[id]);
+            });
+            return next;
+          });
         };
         const useEstateEstimates = () => {
           setValueLaneSpend((current) => {
@@ -14843,7 +14905,7 @@ const architectureMath = useMemo(() => {
               <div className="flex flex-wrap items-center gap-3">
                 <button type="button" onClick={suggestFromDesign} className="text-xs font-bold px-3 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900">Suggest from this design</button>
                 <button type="button" onClick={useEstateEstimates} disabled={!(estSpend.storage > 0)} className="text-xs font-bold px-3 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 disabled:opacity-40">Use RVTools storage estimate</button>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">HLD / sizers: {[vsanInDesign && 'vSAN', derivedAvi && 'Avi', advancedSec && 'vDefend', recoveryInDesign && 'Live/Cyber Recovery', complianceScope.VKS && 'VKS', derivedAuto && 'Automation', k8sGuests && `${k8sGuests} K8s guests`].filter(Boolean).join(' · ') || 'Core VCF only'}. Suggestion checks lanes from this design; it does not lock them.</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">HLD / sizers: {[vsanInDesign && 'vSAN', derivedAvi && 'Avi', advancedSec && 'vDefend', recoveryInDesign && 'Live/Cyber Recovery', complianceScope.VKS && 'VKS', (complianceScope.OPS || hosts > 0) && 'Operations', derivedAuto && 'Automation', k8sGuests && `${k8sGuests} K8s guests`].filter(Boolean).join(' · ') || 'Core VCF only'}. Suggestion checks lanes from this design; it does not lock them.</span>
               </div>
 
               <div className="ui-card p-4 space-y-3">
