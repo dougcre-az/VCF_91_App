@@ -1,6 +1,6 @@
 const DATA_SPREADSHEET_ID_PROPERTY = 'VCF_DATA_SPREADSHEET_ID';
 const CACHE_TTL_SECONDS = 21600;
-const CORE_CACHE_KEY = 'vcgcore_v2';
+const CORE_CACHE_KEY = 'vcgcore_v3';
 const INTEROP_CACHE_KEY = 'interopdb_v3';
 const INTEROP_CACHE_KEY_LEGACY = 'interopdb_v2';
 const PRODUCT_BUILD_CACHE_KEY = 'productbuildcatalog_v1';
@@ -40,6 +40,8 @@ function onOpen() {
     .addItem('Refresh Interop_DB Cache', 'invalidateInteropCache')
     .addItem('Refresh IODevices Cache', 'invalidateIoDeviceCache')
     .addItem('Refresh All Caches', 'invalidateAllCaches')
+    .addSeparator()
+    .addItem('Ensure Value of VCF Averages Tab', 'ensureValueOfVcfSheet')
     .addToUi();
 }
 
@@ -230,7 +232,8 @@ function getVcgCoreData() {
         decisionRequirementMap: sheetToObjects_(findSheet_(spreadsheet, ['Decision Requirement Map', 'DecisionRequirementMap'])),
         appNamingCatalog: sheetToObjects_(findSheet_(spreadsheet, ['App Naming Catalog', 'AppNamingCatalog', 'App Names'])),
         cpus: sheetToObjects_(findSheet_(spreadsheet, ['CPUs', 'CPU'])),
-        guestOs: sheetToObjects_(findSheet_(spreadsheet, ['Guest OS', 'GuestOS']))
+        guestOs: sheetToObjects_(findSheet_(spreadsheet, ['Guest OS', 'GuestOS'])),
+        valueOfVcf: sheetToObjects_(findSheet_(spreadsheet, ['Value of VCF', 'ValueOfVcf', 'TCO Averages']))
       };
       setCachedChunked_(cache, CORE_CACHE_KEY, payload);
       return JSON.stringify(payload);
@@ -360,7 +363,136 @@ function clearCachedChunked_(cache, cacheKey) {
 
 function invalidateCoreCache() {
   clearCachedChunked_(CacheService.getScriptCache(), CORE_CACHE_KEY);
-  SpreadsheetApp.getUi().alert('Core catalog cache cleared. The next load will reread VCF Sizing / Design sheets.');
+  SpreadsheetApp.getUi().alert('Core catalog cache cleared. The next load will reread VCF Sizing / Design / Value of VCF sheets.');
+}
+
+/**
+ * Create (or leave intact) a Value of VCF tab with industry-average and
+ * vendor-specific TCO takeout percentages. Existing rows are never overwritten.
+ * After creating, run Refresh Core Catalog Cache so the web app picks them up.
+ */
+function ensureValueOfVcfSheet() {
+  const spreadsheet = getDataSpreadsheet_();
+  const sheet = ensureValueOfVcfSheet_(spreadsheet);
+  const rowCount = Math.max(0, sheet.getLastRow() - 1);
+  try {
+    SpreadsheetApp.getUi().alert(
+      'Value of VCF averages tab is ready.\n\nSheet: ' + sheet.getName() +
+      '\nData rows: ' + rowCount +
+      '\n\nColumns: Lane, VendorCode, Vendor, StoragePlay, Pct3, Pct5, Pct7, Source, Notes.\n' +
+      'Operations spend templates are in Notes: VMs × $190 (Turbonomic), (Hosts+VMs) × $8/mo (SolarWinds), VMs × $29/mo (Dynatrace), VMs × $15/mo (Datadog).\n' +
+      'Missing seed rows are appended; existing rows are never overwritten.\n' +
+      'StoragePlay = HCI_DEFEND (vs Nutanix HCI), DISAGG_REPLACE (vs Nimble/NetApp arrays), or blank for any play.\n' +
+      'VendorCode = INDUSTRY for the lane baseline. Next: VCF Sizer → Refresh Core Catalog Cache.'
+    );
+  } catch (ignoreUi) {
+    Logger.log('Value of VCF sheet ready: %s (%s rows)', sheet.getName(), rowCount);
+  }
+  return sheet.getName();
+}
+
+function ensureValueOfVcfSheet_(spreadsheet) {
+  let sheet = findSheet_(spreadsheet, ['Value of VCF', 'ValueOfVcf', 'TCO Averages']);
+  const headers = ['Lane', 'VendorCode', 'Vendor', 'StoragePlay', 'Pct3', 'Pct5', 'Pct7', 'Source', 'Notes'];
+  const seed = valueOfVcfSeedRows_();
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet('Value of VCF');
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+    sheet.getRange(2, 1, seed.length, headers.length).setValues(seed);
+    sheet.setFrozenRows(1);
+    sheet.autoResizeColumns(1, headers.length);
+    return sheet;
+  }
+  if (sheet.getLastRow() < 2) {
+    sheet.clear();
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+    sheet.getRange(2, 1, seed.length, headers.length).setValues(seed);
+    sheet.setFrozenRows(1);
+  }
+  mergeValueOfVcfSeed_(sheet, headers, seed);
+  return sheet;
+}
+
+function mergeValueOfVcfSeed_(sheet, headers, seed) {
+  const lastRow = sheet.getLastRow();
+  const existing = {};
+  if (lastRow >= 2) {
+    const width = Math.min(4, sheet.getLastColumn());
+    const values = sheet.getRange(2, 1, lastRow - 1, width).getValues();
+    values.forEach((row) => {
+      const key = String(row[0] || '').toLowerCase() + '|' + String(row[1] || '').toUpperCase() + '|' + String(row[3] || '').toUpperCase();
+      existing[key] = true;
+    });
+  }
+  const missing = seed.filter((row) => {
+    const key = String(row[0] || '').toLowerCase() + '|' + String(row[1] || '').toUpperCase() + '|' + String(row[3] || '').toUpperCase();
+    return !existing[key];
+  });
+  if (!missing.length) return;
+  sheet.getRange(sheet.getLastRow() + 1, 1, missing.length, headers.length).setValues(missing);
+}
+
+function valueOfVcfSeedRows_() {
+  // Conservative planning haircuts — not VVM dollar NPV. Tune per-account in this tab.
+  return [
+    ['hypervisor', 'INDUSTRY', 'Industry average', '', 22, 28, 32, 'Broadcom TCO WP Sept 2025 (haircut vs 51% 3-tier)', 'Always-on lane. Hypervisor-only slice vs a second stack.'],
+    ['hypervisor', 'HYPERV', 'Microsoft Hyper-V', '', 22, 28, 32, 'Industry average', ''],
+    ['hypervisor', 'AHV', 'Nutanix AHV', '', 20, 26, 30, 'Industry average (HCI overlap)', 'Pair with storage HCI_DEFEND when competing Nutanix.'],
+    ['hypervisor', 'OPENSHIFT_VIRT', 'OpenShift Virtualization', '', 18, 24, 28, 'Industry average', ''],
+    ['hypervisor', 'PROXMOX', 'Proxmox', '', 24, 30, 34, 'Industry average', ''],
+    ['hypervisor', 'XEN', 'Citrix Xen / Hypervisor', '', 22, 28, 32, 'Industry average', ''],
+    ['containers', 'INDUSTRY', 'Industry average', '', 18, 24, 28, 'VKS vs second K8s operating model', ''],
+    ['containers', 'OPENSHIFT', 'Red Hat OpenShift', '', 18, 24, 28, 'Industry average', ''],
+    ['containers', 'RANCHER', 'SUSE Rancher', '', 16, 22, 26, 'Industry average', ''],
+    ['containers', 'AKS', 'Azure Kubernetes Service', '', 14, 20, 24, 'Industry average (egress/ops haircut)', ''],
+    ['containers', 'EKS', 'Amazon EKS', '', 14, 20, 24, 'Industry average (egress/ops haircut)', ''],
+    ['containers', 'GKE', 'Google GKE', '', 14, 20, 24, 'Industry average (egress/ops haircut)', ''],
+    ['containers', 'DOCKER', 'Docker Enterprise / Swarm', '', 20, 26, 30, 'Industry average', ''],
+    ['containers', 'EZMERAL', 'HPE Ezmeral', '', 18, 24, 28, 'Industry average', ''],
+    ['containers', 'OSSK8', 'Upstream / OSS Kubernetes', '', 12, 18, 22, 'Industry average (lower license takeout)', ''],
+    ['storage', 'INDUSTRY', 'Industry average', 'HCI_DEFEND', 18, 24, 28, 'Conservative vs Nutanix HCI TCO studies', 'Defend VCF HCI vs Nutanix AOS.'],
+    ['storage', 'INDUSTRY', 'Industry average', 'DISAGG_REPLACE', 22, 28, 34, 'Array + SAN tax vs vSAN ESA disaggregated', 'Replace Nimble/NetApp/Pure/Dell arrays.'],
+    ['storage', 'NUTANIX', 'Nutanix AOS / HCI', 'HCI_DEFEND', 16, 22, 26, 'Haircut vs Nutanix-published HCI TCO', 'Compete/defend. Do not use DISAGG_REPLACE vs Nutanix.'],
+    ['storage', 'NETAPP', 'NetApp ONTAP', 'DISAGG_REPLACE', 22, 28, 34, 'Industry average (array refresh)', 'vSAN disaggregated storage cluster takeout.'],
+    ['storage', 'NIMBLE', 'HPE Nimble / Alletra 5000-6000', 'DISAGG_REPLACE', 24, 30, 36, 'Industry average (Nimble refresh window)', 'Common 3-tier replacement play.'],
+    ['storage', 'HPE', 'HPE Alletra / Primera', 'DISAGG_REPLACE', 22, 28, 34, 'Industry average', ''],
+    ['storage', 'PURE', 'Pure Storage', 'DISAGG_REPLACE', 18, 24, 28, 'Conservative vs Pure Evergreen TCO', ''],
+    ['storage', 'DELL', 'Dell PowerStore / PowerFlex', 'DISAGG_REPLACE', 20, 26, 32, 'Industry average', ''],
+    ['networking', 'INDUSTRY', 'Industry average', '', 25, 30, 34, 'Broadcom TCO WP overlay vs siloed fabric', ''],
+    ['networking', 'CISCO', 'Cisco ACI / Nexus', '', 25, 30, 34, 'Industry average', ''],
+    ['networking', 'ARISTA', 'Arista', '', 22, 28, 32, 'Industry average', ''],
+    ['networking', 'DELL_NET', 'Dell PowerSwitch / OS10', '', 24, 30, 34, 'Industry average', ''],
+    ['networking', 'JUNIPER', 'Juniper', '', 24, 30, 34, 'Industry average', ''],
+    ['networking', 'EXTREME', 'Extreme', '', 24, 30, 34, 'Industry average', ''],
+    ['networking', 'SONIC', 'SONiC', '', 18, 24, 28, 'Industry average (lower license takeout)', ''],
+    ['firewall', 'INDUSTRY', 'Industry average', '', 35, 42, 48, 'vDefend Value Modeling ~50% vs HW FW (haircut)', ''],
+    ['firewall', 'PALO', 'Palo Alto', '', 35, 42, 48, 'Industry average', ''],
+    ['firewall', 'FORTINET', 'Fortinet', '', 32, 40, 46, 'Industry average', ''],
+    ['firewall', 'CISCO_FW', 'Cisco Firepower / ASA', '', 34, 42, 48, 'Industry average', ''],
+    ['firewall', 'CHECKPOINT', 'Check Point', '', 34, 40, 46, 'Industry average', ''],
+    ['firewall', 'JUNIPER_FW', 'Juniper SRX', '', 32, 38, 44, 'Industry average', ''],
+    ['firewall', 'ZSCALER', 'Zscaler', '', 20, 26, 30, 'Industry average (SASE overlap, not full takeout)', ''],
+    ['loadbalancer', 'INDUSTRY', 'Industry average', '', 28, 34, 38, 'VVM DC hardware LB takeout', ''],
+    ['loadbalancer', 'F5', 'F5 BIG-IP', '', 28, 34, 38, 'Industry average', ''],
+    ['loadbalancer', 'NETSCALER', 'Citrix NetScaler / ADC', '', 26, 32, 36, 'Industry average', ''],
+    ['loadbalancer', 'HAPROXY', 'HAProxy', '', 12, 16, 20, 'Industry average (lower license takeout)', ''],
+    ['loadbalancer', 'A10', 'A10 Thunder', '', 24, 30, 34, 'Industry average', ''],
+    ['loadbalancer', 'LOADMASTER', 'Kemp LoadMaster', '', 22, 28, 32, 'Industry average', ''],
+    ['backup', 'INDUSTRY', 'Industry average', '', 20, 26, 30, 'IDC Live Recovery Mar 2024 (cost-avoidance haircut)', 'Coexistence vs full displacement.'],
+    ['backup', 'VEEAM', 'Veeam', '', 18, 24, 28, 'Industry average', 'Often coexistence — use only when DR platform is in play.'],
+    ['backup', 'RUBRIK', 'Rubrik', '', 20, 26, 30, 'Industry average', ''],
+    ['backup', 'COMMVAULT', 'Commvault', '', 20, 26, 30, 'Industry average', ''],
+    ['backup', 'COHESITY', 'Cohesity', '', 20, 26, 30, 'Industry average', ''],
+    ['backup', 'DELL_DPS', 'Dell DPS / PowerProtect', '', 18, 24, 28, 'Industry average', ''],
+    ['operations', 'INDUSTRY', 'Industry average', '', 30, 36, 40, 'VCF Operations vs second monitoring stack', 'Annual spend template: VMs × $190 / year (Turbonomic AWS Marketplace band).'],
+    ['operations', 'TURBO', 'IBM Turbonomic', '', 30, 36, 40, 'AWS Marketplace $37910 / 200 MVS = $190/VM/year', 'Annual spend template: VMs × $190 / year'],
+    ['operations', 'SOLARWINDS', 'SolarWinds Observability Self-Hosted', '', 28, 34, 38, 'SolarWinds list $8 / node / month Essentials', 'Annual spend template: (Hosts + VMs) × $8 / month × 12'],
+    ['operations', 'DYNATRACE', 'Dynatrace', '', 22, 28, 32, 'Dynatrace list Infrastructure $29 / host / month', 'Annual spend template: VMs × $29 / month × 12'],
+    ['operations', 'DATADOG', 'Datadog Infrastructure Pro', '', 20, 26, 30, 'Datadog list $15 / host / month annual commit', 'Annual spend template: VMs × $15 / month × 12'],
+    ['automation', 'INDUSTRY', 'Industry average', '', 40, 48, 52, 'VCF Automation / Salt vs Ansible or MECM', 'Annual spend template: (Hosts + VMs) × $175 / year (AAP Standard band)'],
+    ['automation', 'ANSIBLE', 'Ansible Automation Platform', '', 40, 48, 52, 'Redress / Vendr ~$175 / managed node / year', 'Annual spend template: (Hosts + VMs) × $175 / year'],
+    ['automation', 'MICROSOFT', 'Microsoft Configuration Manager', '', 38, 46, 50, 'System Center Datacenter MSRP $3607 × 25% SA / host', 'Annual spend template: Hosts × $3607 × 25%']
+  ];
 }
 
 function invalidateInteropCache() {

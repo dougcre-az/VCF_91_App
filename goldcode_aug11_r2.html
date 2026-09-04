@@ -7507,12 +7507,13 @@ const VCFApp = () => {
         document.body.classList.toggle('dark', isDark);
       }, [appTheme]);
       const moduleMeta = {
-        READINESS: ['Readiness & Health', 'Core workflow · Step 1 of 6'],
-        UPGRADE_PLAN: ['Upgrade Roadmap', 'Core workflow · Step 2 of 6'],
-        OPTIMIZE: ['Optimization Matrix', 'Core workflow · Step 3 of 6'],
-        EDGE: ['Edge Architecture', 'Core workflow · Step 4 of 6'],
-        ARCHITECTURE: ['Placement Engine', 'Core workflow · Step 5 of 6'],
-        FLEET: ['Fleet & Compliance', 'Core workflow · Step 6 of 6'],
+        READINESS: ['Readiness & Health', 'Core workflow · Step 1 of 7'],
+        UPGRADE_PLAN: ['Upgrade Roadmap', 'Core workflow · Step 2 of 7'],
+        OPTIMIZE: ['Optimization Matrix', 'Core workflow · Step 3 of 7'],
+        EDGE: ['Edge Architecture', 'Core workflow · Step 4 of 7'],
+        ARCHITECTURE: ['Placement Engine', 'Core workflow · Step 5 of 7'],
+        FLEET: ['Mgmt Plane & Control Grid', 'Core workflow · Step 6 of 7'],
+        VALUE_VCF: ['Value of VCF', 'Core workflow · Step 7 of 7'],
         VSAN_SIZER: ['vSAN ESA Sizer', 'Specialist sizing tool'],
         DR_SIZER: ['DR / Live Recovery', 'Specialist sizing tool'],
         AI_SIZER: ['AI / GPU Sizer', 'Specialist sizing tool'],
@@ -7533,7 +7534,6 @@ const VCFApp = () => {
       const READINESS_PAGE_SIZE = 50;
       const [archFilter, setArchFilter] = useState('ALL');
       const [archSelectedCluster, setArchSelectedCluster] = useState('ALL');
-      const [showArchSidebar, setShowArchSidebar] = useState(true);
       const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
       const [hideStaticBaselines, setHideStaticBaselines] = useState(true);
       const [checkedSteps, setCheckedSteps] = useState({});
@@ -7586,7 +7586,7 @@ const VCFApp = () => {
       const [showOptConfig, setShowOptConfig] = useState(true);
       const [showOptClusters, setShowOptClusters] = useState(true);
       const [showOptVMs, setShowOptVMs] = useState(true);
-      const [showRecapture, setShowRecapture] = useState(true);
+      const [showRecapture, setShowRecapture] = useState(false);
 
       const [optFilterLimit, setOptFilterLimit] = useState('ALL');
       const [optMinCurrentHosts, setOptMinCurrentHosts] = useState('');
@@ -7597,7 +7597,8 @@ const VCFApp = () => {
       const [vmFilterClass, setVmFilterClass] = useState('ALL');
 
       // Phase 4 States (HLD Discovery Wizard)
-      const [fleetMode, setFleetMode] = useState('BROWNFIELD'); 
+      const [fleetMode, setFleetMode] = useState('BROWNFIELD');
+      const [hldBuilderView, setHldBuilderView] = useState('MGMT_PLANE'); // MGMT_PLANE | CONTROL_GRID 
       const [gfInstanceCount, setGfInstanceCount] = useState(1);
       const [fleetMgmtCluster, setFleetMgmtCluster] = useState('');
       const [fleetWldMapping, setFleetWldMapping] = useState('ONE_PER_CLUSTER');
@@ -7893,7 +7894,11 @@ const VCFApp = () => {
       const [wlDomainCount, setWlDomainCount] = useState(1);
       
       // NEW: Greenfield Architecture States
-      const [archMode, setArchMode] = useState('BROWNFIELD'); 
+      const [archMode, setArchMode] = useState('BROWNFIELD');
+      const setInfraSourceMode = (mode) => {
+        setFleetMode(mode);
+        setArchMode(mode);
+      }; 
       const [gfHosts, setGfHosts] = useState(4); 
       const [gfCores, setGfCores] = useState(64);
       const [gfMemGB, setGfMemGB] = useState(1024);
@@ -7908,6 +7913,43 @@ const VCFApp = () => {
       });
 
       const [matrixViewMode, setMatrixViewMode] = useState('ADR'); // NEW: Toggles between SoW Decisions and VVD IDs
+      const [valueHorizon, setValueHorizon] = useState(5);
+      const [valueCompetitors, setValueCompetitors] = useState({
+        hypervisor: 'HYPERV',
+        containers: 'OPENSHIFT',
+        storage: 'NUTANIX',
+        networking: 'CISCO',
+        firewall: 'PALO',
+        loadbalancer: 'F5',
+        backup: 'VEEAM',
+      });
+      const [valueLanesOn, setValueLanesOn] = useState({
+        hypervisor: true,
+        containers: false,
+        storage: false,
+        networking: false,
+        firewall: false,
+        loadbalancer: false,
+        backup: false,
+      });
+      const [valueLaneSpend, setValueLaneSpend] = useState({
+        hypervisor: '',
+        containers: '',
+        storage: '',
+        networking: '',
+        firewall: '',
+        loadbalancer: '',
+        backup: '',
+      });
+      const [valueStoragePlay, setValueStoragePlay] = useState('HCI_DEFEND');
+      const [valuePctSource, setValuePctSource] = useState('PLANNING');
+      const [valueVcfAnnual, setValueVcfAnnual] = useState('');
+      const [valueCurrentVmware, setValueCurrentVmware] = useState('');
+      const [valueCountSwitchCost, setValueCountSwitchCost] = useState(true);
+      const [valueSwitchServers, setValueSwitchServers] = useState('');
+      const [valueSwitchMigration, setValueSwitchMigration] = useState('');
+      const [valueLaborOn, setValueLaborOn] = useState(true);
+      const [valueBizOn, setValueBizOn] = useState(true);
 
       // =========================================================
       // 2-STAGE BOOT & BACKGROUND PREFETCH (timeout + 1 auto-retry)
@@ -8744,8 +8786,8 @@ const VCFApp = () => {
           { value: 'STANDARD', label: 'Standard maintenance' }, { value: 'ROLLING', label: 'Rolling evacuation' }, { value: 'LIVE_PATCH', label: 'Live patch where eligible' }
         ] },
         { key: 'hldSecurityServices', label: 'Advanced security services', group: 'Security', options: [
-          { value: 'BASELINE', label: 'Platform baseline' }, { value: 'MICROSEGMENTATION', label: 'Micro-segmentation' }, { value: 'IDS_IPS', label: 'IDS/IPS' }, { value: 'FULL', label: 'Full security services' }
-        ] },
+          { value: 'BASELINE', label: 'Platform baseline — no vDefend / micro-seg / IDS-IPS' }, { value: 'MICROSEGMENTATION', label: 'Micro-segmentation' }, { value: 'IDS_IPS', label: 'IDS/IPS' }, { value: 'FULL', label: 'Full security services' }
+        ], hint: 'Platform baseline means the customer is not buying vDefend and is not doing micro-segmentation or IDS/IPS. Design IDs for those services stay out of scope.' },
       ];
 
       const SOLUTION_SCOPE_OPTIONS_ = {
@@ -8772,7 +8814,10 @@ const VCFApp = () => {
       const SOLUTION_PATTERN_DEFS_ = [
         { key: 'solAI', label: 'Private AI Foundation', group: 'Solutions', kind: 'toggle', triggerKeys: ['hldIncAI'], buckets: ['AI'], getEnabled: () => !!hldIncAI, setEnabled: (on) => setHldIncAI(on) },
         { key: 'solDR', label: 'Site Protection & Disaster Recovery', group: 'Solutions', kind: 'toggle', triggerKeys: ['hldIncDR', 'hldProtectionModel'], buckets: ['DR'], getEnabled: () => !!hldIncDR, setEnabled: (on) => setHldIncDR(on) },
-        { key: 'solSEC', label: 'Security & Ransomware Recovery', group: 'Solutions', kind: 'toggle', triggerKeys: ['hldIncSEC', 'hldSecurityServices'], buckets: ['SEC'], getEnabled: () => !!hldIncSEC, setEnabled: (on) => setHldIncSEC(on) },
+        { key: 'solSEC', label: 'Security & Ransomware Recovery', group: 'Solutions', kind: 'toggle', triggerKeys: ['hldIncSEC', 'hldSecurityServices'], buckets: ['SEC'], getEnabled: () => !!hldIncSEC, setEnabled: (on) => {
+          setHldIncSEC(on);
+          if (!on) setArchitectDecisionInput('hldSecurityServices', 'BASELINE');
+        }, hint: 'Off = not in scope. Pair with Platform baseline so the control grid stays green — no vDefend Design IDs required.' },
         { key: 'solVKS', label: 'vSphere Kubernetes Service', group: 'Solutions', kind: 'toggle', triggerKeys: ['hldIncVKS'], buckets: ['VKS'], getEnabled: () => !!complianceScope.VKS, setEnabled: (on) => { setManualVksScope(on); setComplianceScope(current => ({ ...current, VKS: on })); } },
         { key: 'solDSM', label: 'Data Services Manager', group: 'Solutions', kind: 'select', contextKey: 'hldDsmScope', options: SOLUTION_SCOPE_OPTIONS_.hldDsmScope, triggerKeys: ['hldIncDsm', 'hldDsmScope'], buckets: ['DSM'], getValue: () => hldDsmScope, setValue: (value) => setArchitectDecisionInput('hldDsmScope', value), hint: 'Set scope here — DSM is not sized in the Placement Engine.' },
         { key: 'solAVI', label: 'Advanced Load Balancing (Avi)', group: 'Solutions', kind: 'select', contextKey: 'hldAviScope', options: SOLUTION_SCOPE_OPTIONS_.hldAviScope, triggerKeys: ['derivedAvi', 'hldAviScope', 'hldIncAvi'], buckets: ['AVI'], getValue: () => hldAviScope, setValue: (value) => setArchitectDecisionInput('hldAviScope', value), hint: 'Set scope here — optional Avi Configurator refines SE tier / HA footprint.' },
@@ -8814,6 +8859,17 @@ const VCFApp = () => {
         const extensionRows = ARCHITECT_EXTENSION_KEYS_.map(def => {
           const applicable = typeof def.when === 'function' ? !!def.when(designDecisionContext) : true;
           const scored = scoreStatus({ ...def, applicable });
+          const currentValue = normalizeTriggerValue_(designDecisionContext[def.key]);
+          let hint = def.hint || '';
+          if (def.key === 'hldSecurityServices') {
+            const baselineOnly = !hldIncSEC || currentValue === 'BASELINE' || currentValue === '';
+            if (baselineOnly) {
+              scored.status = 'MAPPED';
+              hint = !hldIncSEC
+                ? 'Security & ransomware recovery is not in scope. Platform baseline only — no vDefend, micro-segmentation, or IDS/IPS Design IDs required.'
+                : 'Platform baseline: the customer is not doing micro-segmentation or IDS/IPS. vDefend coverage is not required.';
+            }
+          }
           return {
             kind: 'extension',
             key: def.key,
@@ -8822,8 +8878,10 @@ const VCFApp = () => {
             control: def.control || 'select',
             options: def.options || [],
             applicable,
-            currentValue: normalizeTriggerValue_(designDecisionContext[def.key]),
+            currentValue,
             ...scored,
+            hint,
+            status: def.key === 'hldSecurityServices' && (!hldIncSEC || currentValue === 'BASELINE' || currentValue === '') ? 'MAPPED' : scored.status,
           };
         });
 
@@ -10909,7 +10967,7 @@ const architectureMath = useMemo(() => {
           yellow: rows.filter(r => r.status === 'yellow').length
         };
       }, [fullRvData, rawRvData, readinessResults]);
-      const CORE_MODULE_ORDER = ['READINESS', 'UPGRADE_PLAN', 'OPTIMIZE', 'EDGE', 'ARCHITECTURE', 'FLEET'];
+      const CORE_MODULE_ORDER = ['READINESS', 'UPGRADE_PLAN', 'OPTIMIZE', 'EDGE', 'ARCHITECTURE', 'FLEET', 'VALUE_VCF'];
       const coreModuleIndex = CORE_MODULE_ORDER.indexOf(activeModule);
 
       const renderSidebar = () => (
@@ -10949,14 +11007,19 @@ const architectureMath = useMemo(() => {
                 {!isSidebarCollapsed && "4. Edge Architecture"}
              </button>
              
-             <button onClick={() => setActiveModule('ARCHITECTURE')} title="Architecture & Placement" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'ARCHITECTURE' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
+             <button onClick={() => setActiveModule('ARCHITECTURE')} title="Placement Engine" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'ARCHITECTURE' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
                 <span className={isSidebarCollapsed ? '' : 'mr-3'}><IconBox /></span>
                 {!isSidebarCollapsed && "5. Placement Engine"}
              </button>
 
-             <button onClick={() => setActiveModule('FLEET')} title="Fleet & Operations" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'FLEET' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
+             <button onClick={() => { setActiveModule('FLEET'); setHldBuilderView('MGMT_PLANE'); }} title="Management Plane & Control Grid" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'FLEET' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
                 <span className={isSidebarCollapsed ? '' : 'mr-3'}><IconFleet /></span>
-                {!isSidebarCollapsed && "6. Fleet & Compliance"}
+                {!isSidebarCollapsed && "6. Mgmt Plane & Control Grid"}
+             </button>
+
+             <button onClick={() => setActiveModule('VALUE_VCF')} title="Value of VCF" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'VALUE_VCF' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
+                <span className={isSidebarCollapsed ? '' : 'mr-3'}><IconActivity /></span>
+                {!isSidebarCollapsed && "7. Value of VCF"}
              </button>
 
              {!isSidebarCollapsed && <div className="px-6 mt-5 mb-2 text-xs font-black tracking-widest uppercase text-slate-500 whitespace-nowrap">Specialist design tools</div>}
@@ -12907,19 +12970,61 @@ const architectureMath = useMemo(() => {
 
          const statusWeight = { 'red': 0, 'yellow': 1, 'blue': 2, 'green': 3 };
          displayedClusters.sort((a, b) => statusWeight[a.status] - statusWeight[b.status]);
+         const enabledCatalogCount = Object.values(sizingSelections).filter(s => s && s.enabled).length;
 
          return (
-            <div className="h-full flex overflow-hidden bg-slate-50 dark:bg-slate-950">
-               {showArchSidebar && (
-               <div className="w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex flex-col overflow-y-auto shrink-0 z-10 shadow-sm custom-scrollbar p-5">
-                  
-                  <div className="flex items-center justify-between mb-6 w-full">
-                     <h3 className="font-black text-slate-800 dark:text-slate-100 uppercase tracking-widest text-xs">Target VCF Sizing</h3>
-                  </div>
-                  
-                  <div className="animate-in fade-in duration-300 w-full">
-                        <div className="mb-6 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                          <label className="text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest mb-2 flex items-center gap-2">
+            <div className="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
+               <div className="flex-1 min-w-0 p-8 overflow-y-auto custom-scrollbar sizer-results-rail space-y-6">
+                  <SizerResultsChrome
+                    title="Placement Engine"
+                    subtitle="Size the management domain against the Management Plane topology. Catalog and N-1 recapture stay secondary."
+                    actions={(
+                      <>
+                        <button type="button" onClick={() => { setActiveModule('FLEET'); setHldBuilderView('MGMT_PLANE'); }} className="text-xs font-bold px-3 py-2 rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900">Edit Management Plane →</button>
+                        <select value={archSelectedCluster} onChange={(e) => setArchSelectedCluster(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-gray-900 dark:text-slate-100 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-2 cursor-pointer font-semibold shadow-sm outline-none max-w-xs">
+                           <option value="ALL">All Clusters</option>
+                           {uniqueClusters.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <select value={archFilter} onChange={(e) => setArchFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-gray-900 dark:text-slate-100 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-2 cursor-pointer font-semibold shadow-sm outline-none">
+                           <option value="ALL"> Show All Constraints</option>
+                           <option value="VIABLE"> Hide Incompatible (Red)</option>
+                           <option value="GREEN"> Show Prime Candidates Only</option>
+                        </select>
+                        <button onClick={exportArchitecture} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow flex items-center transition whitespace-nowrap">
+                          <svg className="w-4 h-4 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                          Export Architecture Plan
+                        </button>
+                      </>
+                    )}
+                  />
+
+                  <details className="ui-card p-5 group" open>
+                     <summary className="cursor-pointer flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4 list-none [&::-webkit-details-marker]:hidden">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <span className="mt-1 text-slate-400 dark:text-slate-500 text-xs font-black transition-transform group-open:rotate-90">▶</span>
+                          <div>
+                            <h3 className="font-black text-slate-900 dark:text-slate-100">Target domain / infrastructure source</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Same brownfield / greenfield switch as Management Plane. Workload-domain count multiplies WLD catalog rows.</p>
+                          </div>
+                        </div>
+                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{archMode === 'GREENFIELD' ? 'Greenfield spec' : 'Existing clusters'} · {wlDomainCount} WLD</span>
+                     </summary>
+
+                  {/* GREENFIELD TOGGLE AND INPUTS */}
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                           <h3 className="font-black text-slate-800 dark:text-slate-100 uppercase tracking-widest text-xs">Infrastructure Source</h3>
+                           <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Shared with Management Plane — evaluate existing clusters or design net-new hosts.</p>
+                        </div>
+                        <select className="border border-slate-300 dark:border-slate-600 rounded px-3 py-1.5 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none" value={archMode} onChange={(e) => setInfraSourceMode(e.target.value)}>
+                           <option value="BROWNFIELD">Existing RVTools Clusters</option>
+                           <option value="GREENFIELD">New Greenfield Spec</option>
+                        </select>
+                     </div>
+
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-5 mt-4 border-t border-slate-100 dark:border-slate-800">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
                             <IconBox /> Workload Domains
                           </label>
                           <SizerNumberInput
@@ -12938,95 +13043,13 @@ const architectureMath = useMemo(() => {
                             <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">Each domain includes a Workload Domain vCenter (auto-enabled). Count multiplies other selected WLD catalog rows (NSX, Avi, SSP).</p>
                           )}
                         </div>
-
-                        <div className="space-y-6">
-                           {groupings.map((group, groupIdx) => {
-                              const groupComps = [...new Set(normalizedSizing.filter(r => r.group === group).map(r => r.component))]
-                                .filter(comp => !isSimpleCatalogComponent_(comp));
-                              if (groupComps.length === 0) return null;
-                              const isAviGroup = /avi/i.test(group);
-                              const isFirstAviGroup = isAviGroup && !groupings.slice(0, groupIdx).some(g => /avi/i.test(g) && normalizedSizing.some(r => r.group === g));
-
-                              return (
-                                 <div key={group} id={isFirstAviGroup ? 'arch-avi-sizing' : undefined} className={`mb-6 p-3 rounded-xl border ${group.toLowerCase() === 'vcf management services' ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600' : isAviGroup ? 'border-blue-300 dark:border-blue-700 bg-blue-50/40 dark:bg-blue-950/30' : 'border-transparent'}`}>
-                                    <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 border-b pb-1">{group}</h4>
-                                    
-                                    <div className="space-y-3">
-                                       {groupComps.map(comp => {
-                                          const sel = sizingSelections[comp];
-                                          if (!sel) return null;
-
-                                          return (
-                                             <div key={comp} className="border-l-2 border-slate-300 dark:border-slate-600 pl-3">
-                                                <div className="flex items-start justify-between">
-                                                   <label className={`text-sm font-bold leading-tight pr-2 flex items-center gap-2 cursor-pointer ${sel.enabled ? 'text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300'}`}>
-                                                      <input type="checkbox" className="w-4 h-4 text-blue-600 dark:text-blue-400 rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500 cursor-pointer shrink-0"
-                                                         checked={sel.enabled}
-                                                         disabled={sel.isMandatory}
-                                                         onChange={(e) => handleComponentToggle(comp, e.target.checked)}
-                                                      />
-                                                      {comp}
-                                                   </label>
-                                                   {sel.isMandatory && <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded uppercase font-bold shrink-0">Req</span>}
-                                                </div>
-                                                
-                                                {sel.enabled && sel.sizes && sel.sizes.length > 0 && (
-                                                   <select 
-                                                      className="w-[calc(100%-24px)] mt-1.5 border border-slate-200 dark:border-slate-700 rounded text-xs px-2 py-1 bg-white dark:bg-slate-900 focus:ring-1 focus:ring-blue-500 outline-none ml-6 font-semibold text-slate-700 dark:text-slate-200"
-                                                      value={sel.profile}
-                                                      onChange={(e) => setSizingSelections(prev => ({...prev, [comp]: {...prev[comp], profile: e.target.value}}))}
-                                                   >
-                                                      {sel.sizes.map(p => <option key={p} value={p}>{p}</option>)}
-                                                   </select>
-                                                )}
-                                             </div>
-                                          );
-                                       })}
-                                    </div>
-                                 </div>
-                              );
-                           })}
-                        </div>
-                     </div>
-               </div>
-               )}
-
-               <div className="flex-1 min-w-0 p-8 overflow-y-auto custom-scrollbar sizer-results-rail space-y-6">
-                  <SizerResultsChrome
-                    title="Placement Engine"
-                    subtitle="Validating Management Domain sizing and generating placement plans."
-                    showInputs={showArchSidebar}
-                    onToggleInputs={() => setShowArchSidebar(!showArchSidebar)}
-                    actions={(
-                      <>
-                        <select value={archSelectedCluster} onChange={(e) => setArchSelectedCluster(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-gray-900 dark:text-slate-100 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-2 cursor-pointer font-semibold shadow-sm outline-none max-w-xs">
-                           <option value="ALL">All Clusters</option>
-                           {uniqueClusters.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <select value={archFilter} onChange={(e) => setArchFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-gray-900 dark:text-slate-100 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-2 cursor-pointer font-semibold shadow-sm outline-none">
-                           <option value="ALL"> Show All Constraints</option>
-                           <option value="VIABLE"> Hide Incompatible (Red)</option>
-                           <option value="GREEN"> Show Prime Candidates Only</option>
-                        </select>
-                        <button onClick={exportArchitecture} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow flex items-center transition whitespace-nowrap">
-                          <svg className="w-4 h-4 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                          Export Architecture Plan
-                        </button>
-                      </>
-                    )}
-                  />
-
-                  {/* GREENFIELD TOGGLE AND INPUTS */}
-                  <div className="mb-6 bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative z-20">
-                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                        <div>
-                           <h3 className="font-black text-slate-800 dark:text-slate-100 uppercase tracking-widest text-xs">Infrastructure Source</h3>
-                           <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Evaluate existing clusters or design a net-new environment.</p>
-                        </div>
-                        <select className="border border-slate-300 dark:border-slate-600 rounded px-3 py-1.5 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none" value={archMode} onChange={(e) => setArchMode(e.target.value)}>
-                           <option value="BROWNFIELD">Existing RVTools Clusters</option>
-                           <option value="GREENFIELD">New Greenfield Spec</option>
-                        </select>
+                        {fleetMgmtCluster && archMode === 'BROWNFIELD' && (
+                          <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3">
+                            <div className="text-[10px] font-black text-amber-800 dark:text-amber-300 uppercase tracking-widest">Management domain from HLD</div>
+                            <p className="text-sm font-bold text-amber-900 dark:text-amber-200 mt-1">{fleetMgmtCluster}</p>
+                            <button type="button" onClick={() => { setActiveModule('FLEET'); setHldBuilderView('MGMT_PLANE'); }} className="text-[10px] font-bold text-amber-800 dark:text-amber-300 mt-2 hover:underline">Change on Management Plane →</button>
+                          </div>
+                        )}
                      </div>
                      
                      {archMode === 'GREENFIELD' && (
@@ -13091,7 +13114,77 @@ const architectureMath = useMemo(() => {
                            </div>
                         </div>
                      )}
-                  </div>
+                  </details>
+
+                  <details className="ui-card p-5 group">
+                     <summary className="cursor-pointer flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4 list-none [&::-webkit-details-marker]:hidden">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <span className="mt-1 text-slate-400 dark:text-slate-500 text-xs font-black transition-transform group-open:rotate-90">▶</span>
+                          <div>
+                            <h3 className="font-black text-slate-900 dark:text-slate-100">Services in scope</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">VCF Sizing catalog — enable appliances and pick profiles. Management services are required; Avi / optional rows stay collapsed with the rest of the catalog.</p>
+                          </div>
+                        </div>
+                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{enabledCatalogCount} enabled</span>
+                     </summary>
+                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                           {groupings.map((group, groupIdx) => {
+                              const groupComps = [...new Set(normalizedSizing.filter(r => r.group === group).map(r => r.component))]
+                                .filter(comp => !isSimpleCatalogComponent_(comp));
+                              if (groupComps.length === 0) return null;
+                              const isAviGroup = /avi/i.test(group);
+                              const isFirstAviGroup = isAviGroup && !groupings.slice(0, groupIdx).some(g => /avi/i.test(g) && normalizedSizing.some(r => r.group === g));
+
+                              return (
+                                 <div key={group} id={isFirstAviGroup ? 'arch-avi-sizing' : undefined} className={`p-3 rounded-xl border ${group.toLowerCase() === 'vcf management services' ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600' : isAviGroup ? 'border-blue-300 dark:border-blue-700 bg-blue-50/40 dark:bg-blue-950/30' : 'border-slate-200 dark:border-slate-700'}`}>
+                                    <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 border-b pb-1">{group}</h4>
+                                    <div className="space-y-3">
+                                       {groupComps.map(comp => {
+                                          const sel = sizingSelections[comp];
+                                          if (!sel) return null;
+                                          return (
+                                             <div key={comp} className="border-l-2 border-slate-300 dark:border-slate-600 pl-3">
+                                                <div className="flex items-start justify-between">
+                                                   <label className={`text-sm font-bold leading-tight pr-2 flex items-center gap-2 cursor-pointer ${sel.enabled ? 'text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300'}`}>
+                                                      <input type="checkbox" className="w-4 h-4 text-blue-600 dark:text-blue-400 rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500 cursor-pointer shrink-0"
+                                                         checked={sel.enabled}
+                                                         disabled={sel.isMandatory}
+                                                         onChange={(e) => handleComponentToggle(comp, e.target.checked)}
+                                                      />
+                                                      {comp}
+                                                   </label>
+                                                   {sel.isMandatory && <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded uppercase font-bold shrink-0">Req</span>}
+                                                </div>
+                                                {sel.enabled && sel.sizes && sel.sizes.length > 0 && (
+                                                   <select
+                                                      className="w-[calc(100%-24px)] mt-1.5 border border-slate-200 dark:border-slate-700 rounded text-xs px-2 py-1 bg-white dark:bg-slate-900 focus:ring-1 focus:ring-blue-500 outline-none ml-6 font-semibold text-slate-700 dark:text-slate-200"
+                                                      value={sel.profile}
+                                                      onChange={(e) => setSizingSelections(prev => ({...prev, [comp]: {...prev[comp], profile: e.target.value}}))}
+                                                   >
+                                                      {sel.sizes.map(p => <option key={p} value={p}>{p}</option>)}
+                                                   </select>
+                                                )}
+                                             </div>
+                                          );
+                                       })}
+                                    </div>
+                                 </div>
+                              );
+                           })}
+                     </div>
+                  </details>
+
+                  <details className="ui-card p-5 group" open>
+                     <summary className="cursor-pointer flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4 list-none [&::-webkit-details-marker]:hidden">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <span className="mt-1 text-slate-400 dark:text-slate-500 text-xs font-black transition-transform group-open:rotate-90">▶</span>
+                          <div>
+                            <h3 className="font-black text-slate-900 dark:text-slate-100">{archMode === 'GREENFIELD' ? 'Fit validation' : 'Cluster candidates'}</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Does the management-domain payload fit? Recapture (N-1) stays collapsed below until you need it.</p>
+                          </div>
+                        </div>
+                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{architectureMath?.targetVcpu || 0} vCPU · {architectureMath?.targetRam || 0} GB</span>
+                     </summary>
 
                   {/* DYNAMIC PAYLOAD BANNER */}
                   {(() => {
@@ -13232,8 +13325,6 @@ const architectureMath = useMemo(() => {
                     </div>
                   )}
 
-                  <h3 className="font-black text-slate-800 dark:text-slate-100 uppercase tracking-widest text-xs mb-4">{archMode === 'GREENFIELD' ? 'Blueprint Validation' : 'Cluster Candidates'}</h3>
-                  
                   {archMode === 'GREENFIELD' && (
                      <div className="mb-4 p-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-600 dark:text-slate-300 flex items-start gap-2">
                         <IconInfo className="w-4 h-4 shrink-0 mt-0.5 text-slate-400 dark:text-slate-500" />
@@ -13258,7 +13349,6 @@ const architectureMath = useMemo(() => {
                                  if (canSelect) {
                                     const nextCluster = isSelected ? 'ALL' : c.cluster;
                                     setArchSelectedCluster(nextCluster);
-                                    if (nextCluster !== 'ALL') setFleetMgmtCluster(nextCluster);
                                  }
                               }}
                               className={`bg-white dark:bg-slate-900 border rounded-xl p-5 shadow-sm transition-all ${canSelect ? 'cursor-pointer transform hover:-translate-y-1 hover:shadow-lg' : ''} ${isSelected ? 'ring-2 ring-blue-500 dark:ring-blue-400 shadow-md scale-[1.02]' : ''} ${c.status === 'green' ? 'border-emerald-200 dark:border-emerald-800' : (c.status === 'yellow' ? 'border-amber-200 dark:border-amber-800' : (c.status === 'blue' ? 'border-blue-300 dark:border-blue-700 ring-1 ring-blue-50' : 'border-red-200 dark:border-red-800'))}`}
@@ -13281,19 +13371,29 @@ const architectureMath = useMemo(() => {
                               </div>
 
                               {isSelected && canSelect && (
-                                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
-                                      <IconCheck /> Selected for Recapture Analysis
+                                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-2">
+                                      <div className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
+                                          <IconCheck /> Selected for recapture analysis
+                                      </div>
+                                      {fleetMgmtCluster === c.cluster ? (
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-amber-800 dark:text-amber-300">Management domain (from HLD)</span>
+                                      ) : (
+                                        <button type="button" onClick={(e) => { e.stopPropagation(); setFleetMgmtCluster(c.cluster); }} className="self-start text-[10px] font-black uppercase tracking-widest text-white bg-amber-600 hover:bg-amber-700 px-2.5 py-1.5 rounded">
+                                          Set as management domain
+                                        </button>
+                                      )}
                                   </div>
                               )}
                            </div>
                         );
                      })}
                   </div>
+                  </details>
 
                   {archMode === 'BROWNFIELD' && (
                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm flex flex-col mb-6 shrink-0 mt-8">
                         <div className={`px-5 py-4 flex items-center justify-between bg-slate-50 dark:bg-slate-950 cursor-pointer ${showRecapture ? 'border-b border-slate-200 dark:border-slate-700' : ''}`} onClick={() => setShowRecapture(!showRecapture)}>
-                           <h3 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2"><IconServer /> MANAGEMENT DOMAIN RECAPTURE PROTOCOL (N-1 RULE)</h3>
+                           <h3 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2"><IconServer /> N-1 recapture protocol</h3>
                            {showRecapture ? <IconChevronUp /> : <IconChevronDown />}
                         </div>
                         {showRecapture && (
@@ -13536,15 +13636,15 @@ const architectureMath = useMemo(() => {
          });
          const specialistCapabilities = [
             hldIncAI && { label: 'Private AI', icon: <IconAI /> },
-            hldIncSEC && architectDecisionInputs.hldSecurityServices === 'BASELINE' && { label: 'Security baseline', icon: <IconShield /> },
-            (architectDecisionInputs.hldSecurityServices === 'MICROSEGMENTATION' || architectDecisionInputs.hldSecurityServices === 'FULL') && { label: 'Micro-segmentation', icon: <IconShield /> },
-            (architectDecisionInputs.hldSecurityServices === 'IDS_IPS' || architectDecisionInputs.hldSecurityServices === 'FULL') && { label: 'IDS/IPS', icon: <IconShield /> },
+            architectDecisionInputs.hldSecurityServices === 'BASELINE' && { label: 'Security baseline', icon: <IconShield /> },
+            hldIncSEC && (architectDecisionInputs.hldSecurityServices === 'MICROSEGMENTATION' || architectDecisionInputs.hldSecurityServices === 'FULL') && { label: 'Micro-segmentation', icon: <IconShield /> },
+            hldIncSEC && (architectDecisionInputs.hldSecurityServices === 'IDS_IPS' || architectDecisionInputs.hldSecurityServices === 'FULL') && { label: 'IDS/IPS', icon: <IconShield /> },
             architectDecisionInputs.hldProtectionModel === 'CYBER_VAULT' && { label: 'Cyber Recovery', icon: <IconRecovery /> },
             hldIncDR && { label: 'Site Protection & DR', icon: <IconRecovery /> },
             complianceScope.VKS && { label: 'Developer Ready / Kubernetes', icon: <IconKubernetes /> },
             derivedAvi && { label: 'Advanced Load Balancing', icon: <IconNetwork /> },
             hldIncDsm && { label: 'Data Services Manager', icon: <IconServer /> },
-            hldIncSEC && { label: 'vDefend Coverage', icon: <IconShield /> },
+            hldIncSEC && architectDecisionInputs.hldSecurityServices !== 'BASELINE' && { label: 'vDefend Coverage', icon: <IconShield /> },
             derivedHcx && { label: 'Cross-Cloud Mobility', icon: <IconActivity /> },
             derivedAuto && { label: 'Private Cloud Automation', icon: <IconActivity /> },
             derivedLogs && { label: 'Logging & Analytics', icon: <IconActivity /> },
@@ -13566,7 +13666,7 @@ const architectureMath = useMemo(() => {
          const scaffoldModules = [];
          if (derivedAvi && aviDecision.scaffold !== false) scaffoldModules.push('Avi');
          if (hldIncDsm && dsmDecision.scaffold !== false) scaffoldModules.push('DSM');
-         if (hldIncSEC && vdefendDecision.scaffold !== false) scaffoldModules.push('vDefend');
+         if (hldIncSEC && architectDecisionInputs.hldSecurityServices !== 'BASELINE' && vdefendDecision.scaffold !== false) scaffoldModules.push('vDefend');
          const fleetReadiness = !primaryMgmt && fleetMode === 'BROWNFIELD'
             ? { label: 'Needs management domain', style: 'bg-amber-50 text-amber-700 border-amber-200' }
             : activeFleetDomains.length === 0
@@ -13726,8 +13826,10 @@ const architectureMath = useMemo(() => {
          return (
             <div className="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
                <SizerPageToolbar
-                  title="Fleet & Compliance"
-                  subtitle="Fleet topology and the Architect decision funnel are the Phase-6 control surfaces after RVTools import."
+                  title={hldBuilderView === 'CONTROL_GRID' ? 'Control Grid' : 'Management Plane'}
+                  subtitle={hldBuilderView === 'CONTROL_GRID'
+                    ? 'Architect decisions, Design ID evidence, and SoW compliance — the control-grid handoff after topology is set.'
+                    : 'Fleet, instance, and domain topology plus the management-plane drawing. Placement sizes this plane next.'}
                   actions={(
                     <>
                       <button onClick={downloadMgmtPNG} className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded shadow flex items-center transition whitespace-nowrap shrink-0"><IconCamera /> <span className="ml-2">Export Mgmt Plane</span></button>
@@ -13739,7 +13841,13 @@ const architectureMath = useMemo(() => {
                <div className="flex-1 p-8 overflow-y-auto custom-scrollbar bg-slate-100 dark:bg-slate-800 min-w-0 sizer-results-rail space-y-6">
                   <div>
                      <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">High-Level Design Builder</h2>
-                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Configure fleet and instance topology first, then resolve architect decisions. Design ID evidence stays secondary.</p>
+                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Set the management plane first (fleet / instance / domain), then resolve the control grid (decisions and Design IDs). Placement Engine sizes the plane — it is not a second design builder.</p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                     <button type="button" onClick={() => setHldBuilderView('MGMT_PLANE')} className={`py-2 px-4 font-semibold text-sm rounded transition-colors whitespace-nowrap ${hldBuilderView === 'MGMT_PLANE' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 hover:bg-slate-100'}`}>Management Plane</button>
+                     <button type="button" onClick={() => setHldBuilderView('CONTROL_GRID')} className={`py-2 px-4 font-semibold text-sm rounded transition-colors whitespace-nowrap ${hldBuilderView === 'CONTROL_GRID' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 hover:bg-slate-100'}`}>Control Grid{!parentDecisionAudit.legacyMode && parentDecisionAudit.unresolved.length > 0 ? ` · ${parentDecisionAudit.unresolved.length}` : ''}</button>
+                     <button type="button" onClick={() => setActiveModule('ARCHITECTURE')} className="py-2 px-4 font-semibold text-sm rounded text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 hover:bg-slate-100">Open Placement Engine →</button>
                   </div>
 
                   <SizerDocsPanel
@@ -13747,13 +13855,15 @@ const architectureMath = useMemo(() => {
                     links={[SIZER_DOCS.vcfDesign, SIZER_DOCS.edgePatterns, SIZER_DOCS.techdocsHome, SIZER_DOCS.vcg]}
                   />
 
+                  {hldBuilderView === 'MGMT_PLANE' && (<>
+
                   <details className="ui-card p-5 mb-6 group" open>
                      <summary className="cursor-pointer flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4 list-none [&::-webkit-details-marker]:hidden">
                         <div className="flex items-start gap-2 min-w-0">
                           <span className="mt-1 text-slate-400 dark:text-slate-500 text-xs font-black transition-transform group-open:rotate-90">▶</span>
                           <div>
-                            <h3 className="font-black text-slate-900 dark:text-slate-100">Fleet and instance topology</h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Set management source, VCF instance count, vCenter / workload-domain mapping, site topology, and edge appliance placement. These drive the architecture drawing and ADR export.</p>
+                            <h3 className="font-black text-slate-900 dark:text-slate-100">Management plane topology</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Set management source, VCF instance count, vCenter / workload-domain mapping, site topology, and edge appliance placement. These drive the management-plane drawing. Control Grid holds decisions and Design IDs.</p>
                           </div>
                         </div>
                         <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{hldInstanceStrategy === 'MULTI_INSTANCE' ? 'Multiple VCF instances' : 'One VCF instance'} · {fleetWldMapping.replaceAll('_', ' ')}</span>
@@ -13761,7 +13871,7 @@ const architectureMath = useMemo(() => {
                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-5">
                         <div>
                            <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block">Mgmt Infrastructure Source</label>
-                           <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none" value={fleetMode} onChange={(e) => setFleetMode(e.target.value)}>
+                           <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none" value={fleetMode} onChange={(e) => setInfraSourceMode(e.target.value)}>
                               <option value="BROWNFIELD">Existing RVTools Clusters</option><option value="GREENFIELD">New Greenfield Design</option>
                            </select>
                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Controls whether capacity and placement begin with discovered RVTools inventory or planning assumptions.</p>
@@ -13959,14 +14069,16 @@ const architectureMath = useMemo(() => {
                         )}
                      </div>
                   </details>
+                  </>)}
 
+                  {hldBuilderView === 'CONTROL_GRID' && (<>
                   <details className="ui-card p-5 mb-6 group" open>
                      <summary className="cursor-pointer flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4 list-none [&::-webkit-details-marker]:hidden">
                         <div className="flex items-start gap-2 min-w-0">
                           <span className="mt-1 text-slate-400 dark:text-slate-500 text-xs font-black transition-transform group-open:rotate-90">▶</span>
                           <div>
                             <h3 className="font-black text-slate-900 dark:text-slate-100">Architect decision funnel</h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Primary Phase-6 decision surface after RVTools import — resolve parent decisions and edit solution / extension coverage here.</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Control-grid decisions — resolve parent choices and solution / extension coverage here. Topology lives on Management Plane.</p>
                           </div>
                         </div>
                         {!parentDecisionAudit.legacyMode && <span className={`inline-flex px-3 py-1.5 rounded-full border text-xs font-black ${parentDecisionAudit.unresolved.length ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300' : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300'}`}>{parentDecisionAudit.unresolved.length ? `${parentDecisionAudit.unresolved.length} decision${parentDecisionAudit.unresolved.length === 1 ? '' : 's'} unresolved` : 'Decision set resolved'}</span>}
@@ -14042,7 +14154,8 @@ const architectureMath = useMemo(() => {
                                      }
                                      if (row.key === 'hldSecurityServices') {
                                        setArchitectDecisionInput('hldSecurityServices', value);
-                                       if (value !== 'BASELINE') setHldIncSEC(true);
+                                       if (value === 'BASELINE') setHldIncSEC(false);
+                                       else setHldIncSEC(true);
                                        return;
                                      }
                                      setArchitectDecisionInput(row.key, value);
@@ -14059,6 +14172,9 @@ const architectureMath = useMemo(() => {
                                          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">catalog={row.catalogHitCount} · active={row.activeHitCount}{row.sampleIds?.length ? ` · ${row.sampleIds.join(', ')}` : ''}</div>
                                          {row.hint && (
                                            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">{row.hint}</div>
+                                         )}
+                                         {row.key === 'solSEC' && row.enabled && architectDecisionInputs.hldSecurityServices !== 'BASELINE' && (
+                                           <button type="button" className="text-[10px] font-bold text-blue-700 dark:text-blue-300 mt-1 hover:underline" onClick={() => setActiveModule('VDEFEND_COVERAGE')}>Open vDefend Coverage →</button>
                                          )}
                                          {row.key === 'solAVI' && row.enabled && (
                                            <button type="button" className="text-[10px] font-bold text-blue-700 dark:text-blue-300 mt-1 hover:underline" onClick={() => setActiveModule('AVI_CONFIGURATOR')}>Open Avi Configurator →</button>
@@ -14127,7 +14243,9 @@ const architectureMath = useMemo(() => {
                         </>
                      )}
                   </details>
+                  </>)}
 
+                  {hldBuilderView === 'MGMT_PLANE' && (<>
                   <details className="ui-card p-5 mb-6 group">
                      <summary className="cursor-pointer flex items-start gap-2 mb-4 list-none [&::-webkit-details-marker]:hidden">
                         <span className="mt-1 text-slate-400 dark:text-slate-500 text-xs font-black transition-transform group-open:rotate-90">▶</span>
@@ -14181,13 +14299,13 @@ const architectureMath = useMemo(() => {
                   </details>
 
                   {(!primaryMgmt && fleetMode === 'BROWNFIELD') ? (
-                     <div className="bg-white dark:bg-slate-900 p-12 text-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 shadow-sm mt-8"><IconBox className="w-12 h-12 mx-auto mb-4 text-slate-300" /><p>Select a Primary Mgmt Domain Cluster in <span className="font-bold">Fleet and instance topology</span> above, or switch to Greenfield. Architecture drawings also stay under Architecture overview (optional).</p></div>
+                     <div className="bg-white dark:bg-slate-900 p-12 text-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 shadow-sm mt-8"><IconBox className="w-12 h-12 mx-auto mb-4 text-slate-300" /><p>Select a Primary Mgmt Domain Cluster in <span className="font-bold">Management plane topology</span> above, or switch to Greenfield to draw the management plane.</p></div>
                   ) : (
                      <div className="animate-in fade-in duration-500 flex flex-col gap-8">
                         
                         <div ref={diagramRef} id="arch-mgmt-plane" className={`bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-300 dark:border-slate-600 shadow-sm relative pt-16 ${archFocusClass('arch-mgmt-plane')}`}>
                            <div className="absolute top-6 left-8 right-0 z-30">
-                              <h2 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Management Plane & Control Grid</h2>
+                              <h2 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Management Plane</h2>
                               <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1 uppercase tracking-widest">{hldSiteTopology === 'STRETCHED' ? 'Stretched Dual-Site' : (hldSiteTopology === 'MULTI' ? 'Multi-Site Federated' : 'Single Site')} Deployment</p>
                            </div>
                            <div className="flex flex-col xl:flex-row gap-6 items-start justify-center w-full relative mt-12">
@@ -14262,7 +14380,11 @@ const architectureMath = useMemo(() => {
                               })}
                            </div>
                         </div>
+                     </div>
+                  )}
+                  </>)}
 
+                  {hldBuilderView === 'CONTROL_GRID' && (<>
                         <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-2xl p-6 shadow-sm mb-12">
                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 dark:border-slate-700 pb-4 mb-4">
                               <div>
@@ -14325,13 +14447,613 @@ const architectureMath = useMemo(() => {
                               </table>
                            </div>
                         </div>
-                     </div>
-                  )}
+                  </>)}
                </div>
                </div>
             </div>
          );
           };
+
+      const renderValueOfVcf = () => {
+        const vHost = rawRvData?.vHost || [];
+        const vInfo = rawRvData?.vInfo || [];
+        const hosts = vHost.length;
+        const vms = vInfo.length;
+        const numCol = (row, keys) => {
+          const n = parseFloat(getCol(row, keys));
+          return Number.isFinite(n) ? n : 0;
+        };
+        const poweredOn = vInfo.filter(vm => !String(getCol(vm, ['powerstate', 'power', 'state'])).toLowerCase().includes('off')).length;
+        const totalGb = vInfo.reduce((sum, vm) => sum + numCol(vm, ['provisionedmib', 'provisioned mb', 'provisionedmb', 'total disk capacity mb', 'in use mb']) / 1024, 0);
+        const gbPerVm = vms ? totalGb / vms : 0;
+        const totalTb = totalGb / 1024;
+        const k8sKeywords = ['rhcos', 'openshift', 'ocp-', 'rancher', 'rke-', 'k3s', 'k8s', 'tkg-', 'tanzu', 'supervisor', 'aks', 'eks', 'gke'];
+        const k8sGuests = vInfo.filter(vm => {
+          const name = String(getCol(vm, ['vm', 'name', 'vmname'])).toLowerCase();
+          const os = String(getCol(vm, ['osaccordingtotheconfigurationfile', 'os', 'guestos'])).toLowerCase();
+          return k8sKeywords.some(kw => name.includes(kw) || os.includes(kw));
+        }).length;
+        const hasK8sEstate = k8sGuests > 0;
+        const vsanHosts = vHost.filter(h => {
+          const vsan = String(getCol(h, ['vsan', 'vsandiskgroup', 'hcl vsan', 'vsanfailover'])).toLowerCase();
+          return vsan && !['false', 'no', '0', 'n/a', 'none', ''].includes(vsan);
+        }).length;
+        const clusters = estateRibbon?.clusters || new Set(vHost.map(h => getCol(h, ['cluster'])).filter(Boolean)).size;
+        const vcenters = estateRibbon?.vcenters || new Set(vHost.map(h => getCol(h, ['visdkserver', 'viserver', 'vcenter', 'vcenterserver'])).filter(Boolean)).size;
+        const hostsSaved = (optAggMetrics && optAggMetrics.totalCurrentHosts > 0)
+          ? Math.max(0, optAggMetrics.totalCurrentHosts - optAggMetrics.totalProjHosts)
+          : 0;
+        const vsanInDesign = String(hldStorageProto || '').includes('VSAN');
+        const advancedSec = !!hldIncSEC && architectDecisionInputs.hldSecurityServices !== 'BASELINE';
+        const recoveryInDesign = !!hldIncDR || architectDecisionInputs.hldProtectionModel === 'CYBER_VAULT' || architectDecisionInputs.hldProtectionModel === 'REPLICATION';
+        const clip = (s, n = 88) => {
+          const t = String(s || '').replace(/\s+/g, ' ').trim();
+          return t.length > n ? `${t.slice(0, n)}…` : t;
+        };
+        const hldSuggests = {
+          hypervisor: true,
+          containers: !!complianceScope.VKS || hasK8sEstate,
+          storage: vsanInDesign,
+          networking: true,
+          firewall: advancedSec,
+          loadbalancer: !!derivedAvi,
+          backup: recoveryInDesign,
+        };
+        const laneEvidence = {
+          hypervisor: [
+            hosts ? `${hosts.toLocaleString()} hosts` : null,
+            vms ? `${vms.toLocaleString()} VMs (${poweredOn.toLocaleString()} on)` : null,
+            totalVcfCores ? `${totalVcfCores.toLocaleString()} VCF cores` : null,
+            hostsSaved ? `Optimize: −${hostsSaved} hosts` : null,
+          ].filter(Boolean),
+          containers: [
+            k8sGuests ? `${k8sGuests} K8s-like guests in RVTools` : null,
+            complianceScope.VKS ? (vksDecision.compatible ? vksDecision.supervisorModelLabel : 'VKS in HLD — open VKS sizer') : null,
+            !complianceScope.VKS && hasK8sEstate ? 'K8s guests found — VKS not yet on HLD' : null,
+          ].filter(Boolean),
+          storage: [
+            gbPerVm > 0 ? `${Math.round(gbPerVm)} GB/VM provisioned` : null,
+            totalTb > 0 ? `${totalTb.toFixed(1)} TiB provisioned` : null,
+            vsanInDesign ? (hldStorageProto === 'VSAN_ESA' ? 'vSAN ESA in HLD' : 'vSAN in HLD') : null,
+            vsanHosts ? `${vsanHosts} hosts with vSAN flag` : null,
+            architectDecisionInputs.hldStorageTopology ? `Topology ${architectDecisionInputs.hldStorageTopology}` : null,
+          ].filter(Boolean),
+          networking: [
+            networkingDecision.networkingModel ? `Sizer: ${networkingDecision.networkingModel}` : null,
+            networkingDecision.implementation ? String(networkingDecision.implementation).replaceAll('_', ' ') : null,
+            hldEdgeStrategy ? `Edge ${hldEdgeStrategy.replaceAll('_', ' ')}` : null,
+            networkingDecision.summary && !String(networkingDecision.summary).includes('Open VCF Networking') ? clip(networkingDecision.summary, 72) : null,
+          ].filter(Boolean),
+          firewall: [
+            advancedSec ? `vDefend ${architectDecisionInputs.hldSecurityServices.replaceAll('_', ' ')}` : (hldIncSEC ? 'Security on — still platform baseline' : null),
+            !vdefendDecision.scaffold ? clip(vdefendDecision.decision || vdefendDecision.summary, 72) : null,
+            vdefendDecision.gapCount ? `${vdefendDecision.gapCount} coverage gaps` : null,
+            vdefendDecision.scaffold && hldIncSEC ? 'Open vDefend Coverage' : null,
+          ].filter(Boolean),
+          loadbalancer: [
+            derivedAvi ? `Avi ${hldAviScope}` : null,
+            !aviDecision.scaffold && aviDecision.seCount ? `${aviDecision.seCount} SEs · ${aviDecision.haModelLabel || aviDecision.haModel}` : null,
+            !aviDecision.scaffold && !aviDecision.seCount ? clip(aviDecision.decision || aviDecision.haModelLabel, 72) : null,
+            aviDecision.scaffold && derivedAvi ? 'Open Avi Configurator' : null,
+          ].filter(Boolean),
+          backup: [
+            hldIncDR ? 'Live Recovery in HLD' : null,
+            architectDecisionInputs.hldProtectionModel && architectDecisionInputs.hldProtectionModel !== 'BACKUP' ? architectDecisionInputs.hldProtectionModel.replaceAll('_', ' ') : null,
+            architectDecisionInputs.hldRecoveryObjectives && architectDecisionInputs.hldRecoveryObjectives !== 'UNRESOLVED' ? architectDecisionInputs.hldRecoveryObjectives.replaceAll('_', ' ') : null,
+          ].filter(Boolean),
+        };
+        const estSpend = {
+          hypervisor: 0,
+          containers: 0,
+          storage: totalGb > 0 && valueStoragePlay !== 'HCI_DEFEND' ? Math.round(totalGb * 2 * 0.15) : 0,
+          networking: 0,
+          firewall: 0,
+          loadbalancer: 0,
+          backup: 0,
+        };
+        const catalogs = {
+          hypervisor: [
+            { value: 'HYPERV', label: 'Microsoft Hyper-V' },
+            { value: 'AHV', label: 'Nutanix AHV' },
+            { value: 'OPENSHIFT_VIRT', label: 'OpenShift Virtualization' },
+            { value: 'PROXMOX', label: 'Proxmox' },
+            { value: 'XEN', label: 'Citrix Xen / Hypervisor' },
+          ],
+          containers: [
+            { value: 'OPENSHIFT', label: 'Red Hat OpenShift' },
+            { value: 'RANCHER', label: 'SUSE Rancher' },
+            { value: 'AKS', label: 'Azure Kubernetes Service' },
+            { value: 'EKS', label: 'Amazon EKS' },
+            { value: 'GKE', label: 'Google GKE' },
+            { value: 'DOCKER', label: 'Docker Enterprise / Swarm' },
+            { value: 'EZMERAL', label: 'HPE Ezmeral' },
+            { value: 'OSSK8', label: 'Upstream / OSS Kubernetes' },
+          ],
+          storage: [
+            { value: 'NUTANIX', label: 'Nutanix AOS / HCI' },
+            { value: 'NIMBLE', label: 'HPE Nimble / Alletra 5000-6000' },
+            { value: 'NETAPP', label: 'NetApp ONTAP' },
+            { value: 'PURE', label: 'Pure Storage' },
+            { value: 'DELL', label: 'Dell PowerStore / PowerFlex' },
+            { value: 'HPE', label: 'HPE Alletra / Primera' },
+          ],
+          networking: [
+            { value: 'CISCO', label: 'Cisco ACI / Nexus' },
+            { value: 'ARISTA', label: 'Arista' },
+            { value: 'DELL_NET', label: 'Dell PowerSwitch / OS10' },
+            { value: 'JUNIPER', label: 'Juniper' },
+            { value: 'EXTREME', label: 'Extreme' },
+            { value: 'SONIC', label: 'SONiC' },
+          ],
+          firewall: [
+            { value: 'PALO', label: 'Palo Alto' },
+            { value: 'FORTINET', label: 'Fortinet' },
+            { value: 'CISCO_FW', label: 'Cisco Firepower / ASA' },
+            { value: 'CHECKPOINT', label: 'Check Point' },
+            { value: 'JUNIPER_FW', label: 'Juniper SRX' },
+            { value: 'ZSCALER', label: 'Zscaler' },
+          ],
+          loadbalancer: [
+            { value: 'F5', label: 'F5 BIG-IP' },
+            { value: 'NETSCALER', label: 'Citrix NetScaler / ADC' },
+            { value: 'HAPROXY', label: 'HAProxy' },
+            { value: 'A10', label: 'A10 Thunder' },
+            { value: 'LOADMASTER', label: 'Kemp LoadMaster' },
+          ],
+          backup: [
+            { value: 'VEEAM', label: 'Veeam' },
+            { value: 'RUBRIK', label: 'Rubrik' },
+            { value: 'COMMVAULT', label: 'Commvault' },
+            { value: 'COHESITY', label: 'Cohesity' },
+            { value: 'DELL_DPS', label: 'Dell DPS / PowerProtect' },
+          ],
+        };
+        const fallbackPct = {
+          hypervisor: { 3: 22, 5: 28, 7: 32 },
+          containers: { 3: 18, 5: 24, 7: 28 },
+          storage: valueStoragePlay === 'HCI_DEFEND' ? { 3: 18, 5: 24, 7: 28 } : { 3: 22, 5: 28, 7: 34 },
+          networking: { 3: 25, 5: 30, 7: 34 },
+          firewall: { 3: 35, 5: 42, 7: 48 },
+          loadbalancer: { 3: 28, 5: 34, 7: 38 },
+          backup: { 3: 20, 5: 26, 7: 30 },
+        };
+        const vvmDirectionalPct = {
+          hypervisor: { 3: 26, 5: 32, 7: 36, source: 'VVM/PCMO compute category (MAVERIK-shaped 5-yr, haircut to 3/7)' },
+          storage: { 3: 55, 5: 65, 7: 70, source: 'VVM/PCMO storage category 64.5% (MAVERIK-shaped; $2/GB placeholder BOM)' },
+          networking: { 3: 35, 5: 41, 7: 45, source: 'VVM/PCMO network category 40.7% (MAVERIK-shaped 5-yr)' },
+        };
+        const normKey = (s) => String(s || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '');
+        const sheetField = (row, names) => {
+          const map = {};
+          Object.keys(row || {}).forEach((key) => { map[normKey(key)] = row[key]; });
+          for (const name of names) {
+            const value = map[normKey(name)];
+            if (value !== undefined && value !== null && String(value).trim() !== '') return String(value);
+          }
+          return '';
+        };
+        const parsePct = (value) => {
+          const n = parseFloat(String(value).replace(/%/g, '').replace(/,/g, '').trim());
+          return Number.isFinite(n) ? n : null;
+        };
+        const parseSpend = (value) => {
+          const n = parseFloat(String(value).replace(/[$,]/g, '').trim());
+          return Number.isFinite(n) && n > 0 ? n : 0;
+        };
+        const fmtUsd = (n) => (n > 0 ? n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }) : '—');
+        const sheetRows = vcgData.valueOfVcf || vcgData['Value of VCF'] || vcgData.tcoAverages || [];
+        const avgIndex = {};
+        sheetRows.forEach((row) => {
+          const lane = sheetField(row, ['Lane']).toLowerCase();
+          const vendor = sheetField(row, ['VendorCode', 'Vendor Code']).toUpperCase();
+          const play = sheetField(row, ['StoragePlay', 'Storage Play']).toUpperCase() || 'ANY';
+          const p3 = parsePct(sheetField(row, ['Pct3', '3yr', '3 yr']));
+          const p5 = parsePct(sheetField(row, ['Pct5', '5yr', '5 yr']));
+          const p7 = parsePct(sheetField(row, ['Pct7', '7yr', '7 yr']));
+          if (!lane || !vendor || p3 == null || p5 == null || p7 == null) return;
+          avgIndex[`${lane}|${vendor}|${play}`] = { 3: p3, 5: p5, 7: p7, source: sheetField(row, ['Source']) };
+        });
+        const lookupPct = (laneId, vendor, play) => {
+          if (valuePctSource === 'VVM' && vvmDirectionalPct[laneId]) return vvmDirectionalPct[laneId];
+          const keys = [
+            `${laneId}|${vendor}|${play}`,
+            `${laneId}|${vendor}|ANY`,
+            `${laneId}|INDUSTRY|${play}`,
+            `${laneId}|INDUSTRY|ANY`,
+          ];
+          for (const key of keys) {
+            if (avgIndex[key]) return avgIndex[key];
+          }
+          return { ...fallbackPct[laneId], source: 'Built-in planning haircut' };
+        };
+        const vvmUnit = { node: 38657, support: 0.15, migOffVsphere: 920, migOcpVirt: 1672 };
+        const competitorMotion = (laneId, vendor, spend) => {
+          if (laneId === 'hypervisor') {
+            if (vendor === 'AHV') return { leave: true, newNodes: true, migPerVm: vvmUnit.migOffVsphere, why: 'Nutanix AHV — new HCI nodes; cannot keep the ESXi fleet. VVM $38,657/node + 15% support + $920/VM off vSphere.' };
+            if (vendor === 'OPENSHIFT_VIRT') return { leave: true, newNodes: false, migPerVm: vvmUnit.migOcpVirt, why: 'OpenShift Virtualization / bare metal — VVM $1,672/VM off vSphere (Red Hat BM). Servers may refresh, but this is a hypervisor leave.' };
+            if (spend > 0) return { leave: true, newNodes: false, migPerVm: vvmUnit.migOffVsphere, why: 'Priced hypervisor swap — VVM $920/VM off vSphere. Existing servers can often stay; migration cannot.' };
+            return { leave: false, newNodes: false, migPerVm: 0, why: 'Always-on lane. Takeout vs Hyper-V/Proxmox/Xen only if you enter their spend — otherwise this is not a leave-vSphere migrate.' };
+          }
+          if (laneId === 'storage' && (vendor === 'NUTANIX' || valueStoragePlay === 'HCI_DEFEND')) {
+            return { leave: true, newNodes: true, migPerVm: vvmUnit.migOffVsphere, why: 'Nutanix HCI storage — same as AHV: new nodes + leave vSphere. Counted once across lanes.' };
+          }
+          if (laneId === 'containers' && ['AKS', 'EKS', 'GKE'].includes(vendor)) {
+            return { leave: false, newNodes: false, migPerVm: 0, why: 'Public-cloud K8s — takeout/ops only. Do not apply on-prem node replace.' };
+          }
+          if (laneId === 'containers' && vendor === 'OPENSHIFT') {
+            return { leave: false, newNodes: false, migPerVm: 0, why: 'OpenShift as a second platform on remaining VMware — takeout only unless the hypervisor lane is also a leave.' };
+          }
+          return { leave: false, newNodes: false, migPerVm: 0, why: 'Point-product takeout — they keep vSphere. ROI is spend × directional % only.' };
+        };
+        const laneOn = (id) => id === 'hypervisor' || !!valueLanesOn[id];
+        const storageVmware = valueStoragePlay === 'HCI_DEFEND' ? 'vSAN ESA HCI' : 'vSAN ESA disaggregated';
+        const storageStory = valueStoragePlay === 'HCI_DEFEND'
+          ? 'Compete/defend vs Nutanix HCI: same class of HCI economics, conservative takeout vs Nutanix-published TCO. Pair with AHV on the hypervisor lane when they are shopping a full Nutanix stack.'
+          : 'Replace a 3-tier array (Nimble, NetApp, Pure, Dell) with a vSAN ESA storage cluster — no hypervisor swap required. Use their current array support + refresh spend as the ROI attach.';
+        const lanes = [
+          {
+            id: 'hypervisor', title: 'Hypervisor / private cloud', vmware: 'VCF 9 (vSphere + SDDC Manager)', locked: true,
+            whyOut: '',
+            story: 'Always on. Stay on the incumbent hypervisor instead of a second stack (Hyper-V, AHV, OpenShift Virt, Proxmox). Broadcom TCO WP (Sept 2025) cites up to 51% 3-year TCO vs traditional 3-tier — this lane uses a conservative hypervisor-only slice.',
+          },
+          {
+            id: 'containers', title: 'Containers / Kubernetes', vmware: 'VKS on VCF',
+            whyOut: 'Optional. Check this lane to compete OpenShift / Rancher / public-cloud K8s even if VKS is not on the HLD yet.',
+            story: 'One VCF control plane for VMs + Kubernetes avoids a second OpenShift / Rancher / public-cloud K8s operating model (skillset, CNI, storage, LB).',
+          },
+          {
+            id: 'storage', title: 'Storage', vmware: storageVmware,
+            whyOut: 'Optional. Check to model vSAN vs Nutanix HCI, or vSAN disaggregated vs Nimble/NetApp — independent of the HLD storage pick.',
+            story: storageStory,
+          },
+          {
+            id: 'networking', title: 'Networking / fabric', vmware: 'NSX (VCF networking)',
+            whyOut: 'Optional. Check when overlay takeout vs Cisco ACI / Arista / Juniper is part of the conversation.',
+            story: 'Software-defined overlay vs a second fabric (Cisco ACI, Arista, Juniper). VCF TCO WP attributes a large share of the 51% 3-tier saving to removing siloed network hardware and ops.',
+          },
+          {
+            id: 'firewall', title: 'East-west firewall / ATP', vmware: 'vDefend (DFW / IDS / SSP)',
+            whyOut: 'Optional. Check when hardware firewall / ATP takeout is in play (even if this design is still on platform baseline).',
+            story: 'VMware Value Modeling cites ~50% CapEx vs hardware firewalls; Forrester TEI of vDefend (Mar 2025) cites ~40% risk reduction.',
+          },
+          {
+            id: 'loadbalancer', title: 'Load balancer / ADC', vmware: 'Avi Load Balancer',
+            whyOut: 'Optional. Check to model F5 / NetScaler takeout before Avi is on Control Grid.',
+            story: 'VVM Network add-on models DC hardware LB takeout (F5-class appliances). Software SE groups avoid refresh + support on a second ADC estate.',
+          },
+          {
+            id: 'backup', title: 'DR & ransomware recovery', vmware: 'VMware Live Recovery / Cyber Recovery',
+            whyOut: 'Optional. Backup is often coexistence — check only when a second DR/ransomware platform is being displaced.',
+            story: 'IDC (Mar 2024) cites 75% faster downtime resolution with Live Recovery. Conservative cost-avoidance haircut vs Veeam, Rubrik, Commvault, Cohesity, Dell DPS.',
+          },
+        ].map((lane) => {
+          const vendor = valueCompetitors[lane.id];
+          const play = lane.id === 'storage' ? valueStoragePlay : 'ANY';
+          const pct = lookupPct(lane.id, vendor, play);
+          const on = laneOn(lane.id);
+          const spend = parseSpend(valueLaneSpend[lane.id]);
+          const horizonPct = pct[valueHorizon] || pct[5];
+          const impliedAnnual = on && spend ? spend * (horizonPct / 100) : 0;
+          const motion = competitorMotion(lane.id, vendor, spend);
+          const evidence = laneEvidence[lane.id] || [];
+          const estateEst = estSpend[lane.id] || 0;
+          return { ...lane, vendor, pct, on, spend, horizonPct, impliedAnnual, motion, evidence, estateEst };
+        });
+        const activeLanes = lanes.filter((lane) => lane.on);
+        const blended = activeLanes.length ? Math.round(activeLanes.reduce((sum, lane) => sum + lane.horizonPct, 0) / activeLanes.length) : 0;
+        const impliedAnnualTotal = activeLanes.reduce((sum, lane) => sum + lane.impliedAnnual, 0);
+        const impliedHorizonTotal = impliedAnnualTotal * valueHorizon;
+        const spendCount = activeLanes.filter((lane) => lane.spend > 0).length;
+        const usingSheet = sheetRows.length > 0;
+        const leaveLanes = activeLanes.filter((lane) => lane.motion.leave);
+        const anyNewNodes = leaveLanes.some((lane) => lane.motion.newNodes);
+        const maxMigPerVm = leaveLanes.reduce((max, lane) => Math.max(max, lane.motion.migPerVm || 0), 0);
+        const switchServersEst = anyNewNodes && hosts > 0 ? hosts * vvmUnit.node * (1 + vvmUnit.support * valueHorizon) : 0;
+        const switchMigEst = maxMigPerVm > 0 && vms > 0 ? vms * maxMigPerVm : 0;
+        const switchServers = valueCountSwitchCost ? (parseSpend(valueSwitchServers) || switchServersEst) : 0;
+        const switchMig = valueCountSwitchCost ? (parseSpend(valueSwitchMigration) || switchMigEst) : 0;
+        const switchTotal = switchServers + switchMig;
+        const FTE_BURDEN = 149335;
+        const FTE_HOUR = 83.18;
+        const laborLines = vms > 0 ? [
+          { id: 'server', label: 'Server / hypervisor admins', fte: Math.max(vms / 1000, 0.25), pct: derivedAuto ? 0.48 : 0.30, why: derivedAuto ? 'VCF Automation — VVM 48% productivity' : 'Single VCF control plane 30% until Automation is in the HLD' },
+          { id: 'storage', label: 'Storage admins', fte: (totalTb / 300) * 0.7, pct: vsanInDesign ? 0.50 : 0.20, why: vsanInDesign ? 'vSAN vs array silos — VVM 50%' : 'External array — smaller VCF labor takeout' },
+          { id: 'network', label: 'Network admins', fte: vms / 1000, pct: 0.48, why: 'NSX overlay vs hardware fabric ops — VVM 48%' },
+          { id: 'sddc', label: 'SDDC / private-cloud ops', fte: Math.max(1, vcenters || 1), pct: derivedAuto ? 0.50 : 0.35, why: derivedAuto ? 'Fleet + Automation 50%' : 'SDDC Manager vs N vCenters — 35% without Automation' },
+        ].map((line) => ({ ...line, annual: line.fte * FTE_BURDEN * line.pct })) : [];
+        const laborAnnual = laborLines.reduce((sum, line) => sum + line.annual, 0);
+        const totalFte = laborLines.reduce((sum, line) => sum + line.fte, 0);
+        const slaHoursDown = (1 - 0.997) * 8760;
+        const drReduction = hldIncDR ? 0.21 : (recoveryInDesign ? 0.15 : 0.10);
+        const hoursSaved = slaHoursDown * drReduction;
+        const downtimeAnnual = hoursSaved * 0.9 * (totalFte * 0.05) * FTE_HOUR;
+        const bizLines = vms > 0 ? [
+          { id: 'downtime', label: 'Avoided downtime (internal IT)', annual: downtimeAnnual, why: `${hoursSaved.toFixed(1)} h saved × ${(totalFte * 0.05).toFixed(2)} FTEs × $${FTE_HOUR}/h. ${hldIncDR ? 'VVM/IDC 21% with Live Recovery.' : '10–15% until Live Recovery is in the HLD.'}` },
+          ...(advancedSec ? [{ id: 'security', label: 'vDefend risk reduction', annual: 0, why: 'Forrester TEI ~40% risk reduction. RVTools has no revenue/breach $ — keep as the close, do not invent a dollar.' }] : []),
+        ] : [];
+        const bizAnnual = bizLines.reduce((sum, line) => sum + line.annual, 0);
+        const laborHorizon = valueLaborOn ? laborAnnual * valueHorizon : 0;
+        const bizHorizon = valueBizOn ? bizAnnual * valueHorizon : 0;
+        const vcfAnnual = parseSpend(valueVcfAnnual);
+        const currentVmware = parseSpend(valueCurrentVmware);
+        const netNewVcfHorizon = Math.max(0, vcfAnnual - currentVmware) * valueHorizon;
+        const roiCovered = impliedHorizonTotal + switchTotal + laborHorizon + bizHorizon;
+        const roiGap = netNewVcfHorizon - roiCovered;
+        const roiReady = vcfAnnual > 0 || roiCovered > 0;
+        const storageSpendOn = laneOn('storage') && parseSpend(valueLaneSpend.storage) > 0;
+        const firewallSpendOn = laneOn('firewall') && parseSpend(valueLaneSpend.firewall) > 0;
+        const lbSpendOn = laneOn('loadbalancer') && parseSpend(valueLaneSpend.loadbalancer) > 0;
+        const impactDrivers = [
+          { rank: '1', filled: valueLaborOn && vms > 0, title: 'Labor / VCF operating model', template: `RVTools ${vms.toLocaleString()} VMs · VVM 48–50%`, why: 'Where VCF excels. FTE productivity from this estate × VVM ratios — not the empty Labor F14 placeholder in Get Started.' },
+          { rank: '1', filled: valueBizOn && vms > 0, title: 'Business impact (downtime)', template: 'RVTools × 99.7% SLA × Live Recovery', why: 'Internal downtime avoided from estate FTEs. Revenue/breach $ stays a talking point unless the customer gives a number.' },
+          { rank: '2', filled: currentVmware > 0, title: 'Current VMware annual', template: 'Software F5', why: 'Blank template starts at $0. Until this is filled, VCF subscription is all-new spend and VVM ROI stays n/a or negative.' },
+          { rank: '2', filled: vcfAnnual > 0, title: 'VCF annual subscription', template: 'ROI Results E37', why: 'Investment hurdle. Template ROI% = (current TCO − future TCO) / VCF software. Empty years = no outcome.' },
+          { rank: '3', filled: vms > 0 && hosts > 0, title: 'VMs and hosts', template: 'Initial Screens C17–C18', why: 'Filled from RVTools when you upload. They scale compute, facilities, labor, and leave-cost.' },
+          { rank: '3', filled: storageSpendOn || (laneOn('storage') && vsanInDesign), title: 'Array / vSAN takeout', template: 'C19 GB/VM · Storage F13 $2/GB · vSAN 0→100%', why: 'Largest hard-dollar 3-tier lever. Enter their Nimble/NetApp spend or use the RVTools GB estimate on the storage lane.' },
+          { rank: '3', filled: leaveLanes.length > 0 && valueCountSwitchCost, title: 'Leave-vSphere competitor', template: 'Nutanix $38,657/node · $920/VM', why: 'Stay-on-VMware ROI is avoided new nodes + migrate, counted once. License-only bake-offs skip this and go negative.' },
+          { rank: '4', filled: firewallSpendOn || (laneOn('firewall') && advancedSec), title: 'vDefend / HW firewall', template: 'Initial D34 · PA-5260 $113,400 · 70% retire', why: 'Network firewall block is hidden until vDefend is Yes. Needs an appliance invoice to matter.' },
+          { rank: '4', filled: lbSpendOn || (laneOn('loadbalancer') && derivedAvi), title: 'Avi / HW load balancer', template: 'Initial D33 · F5 $87,000 · 100% retire', why: 'LB takeout is hidden until Avi is Yes. Check the lane and enter F5/NetScaler spend.' },
+        ];
+        const impactMissing = impactDrivers.filter((d) => !d.filled);
+        const setComp = (id, value) => {
+          setValueCompetitors((current) => ({ ...current, [id]: value }));
+          if (id === 'storage') {
+            setValueStoragePlay(value === 'NUTANIX' ? 'HCI_DEFEND' : 'DISAGG_REPLACE');
+          }
+        };
+        const toggleLane = (id) => {
+          if (id === 'hypervisor') return;
+          setValueLanesOn((current) => ({ ...current, [id]: !current[id] }));
+        };
+        const suggestFromDesign = () => {
+          setValueLanesOn({ ...hldSuggests, hypervisor: true });
+          setValueLaborOn(true);
+          setValueBizOn(true);
+          if (estSpend.storage && !parseSpend(valueLaneSpend.storage) && hldSuggests.storage) {
+            setValueLaneSpend((current) => ({ ...current, storage: String(estSpend.storage) }));
+          }
+        };
+        const useEstateEstimates = () => {
+          setValueLaneSpend((current) => {
+            const next = { ...current };
+            lanes.forEach((lane) => {
+              if (lane.estateEst > 0 && !parseSpend(next[lane.id])) next[lane.id] = String(lane.estateEst);
+            });
+            return next;
+          });
+          if (!laneOn('storage') && estSpend.storage > 0) setValueLanesOn((current) => ({ ...current, storage: true }));
+        };
+        const setSpend = (id, value) => setValueLaneSpend((current) => ({ ...current, [id]: value }));
+
+        return (
+          <div className="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
+            <SizerPageToolbar
+              title="Value of VCF"
+              subtitle="RVTools estate + HLD/sizer coverage drive competitor lanes. Labor and business impact are the VCF close — not the empty VVM placeholders."
+            />
+            <div className="flex-1 p-8 overflow-y-auto custom-scrollbar sizer-results-rail space-y-6">
+              <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
+                <div className="ui-card p-4"><div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Estate (RVTools)</div><div className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{vms.toLocaleString()} <span className="text-sm font-bold text-slate-500">VMs</span></div><div className="text-[10px] text-slate-500 dark:text-slate-400">{hosts.toLocaleString()} hosts · {poweredOn.toLocaleString()} on · {totalTb > 0 ? `${totalTb.toFixed(1)} TiB` : `${totalVcfCores.toLocaleString()} cores`}{gbPerVm > 0 ? ` · ${Math.round(gbPerVm)} GB/VM` : ''}{k8sGuests ? ` · ${k8sGuests} K8s` : ''}{hostsSaved ? ` · −${hostsSaved} hosts` : ''}</div></div>
+                <div className="ui-card p-4"><div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Horizon</div><div className="mt-2 flex gap-1">{[3,5,7].map(y => <button key={y} type="button" onClick={() => setValueHorizon(y)} className={`px-3 py-1.5 text-xs font-black rounded ${valueHorizon === y ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>{y} yr</button>)}</div><div className="mt-2 flex gap-1">{[{ id: 'PLANNING', label: 'Planning haircut' }, { id: 'VVM', label: 'VVM directional' }].map(opt => <button key={opt.id} type="button" onClick={() => setValuePctSource(opt.id)} className={`px-2 py-1 text-[10px] font-black rounded ${valuePctSource === opt.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>{opt.label}</button>)}</div></div>
+                <div className="ui-card p-4 border-emerald-200 dark:border-emerald-800"><div className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">Labor + business</div><div className="text-2xl font-black text-emerald-700 dark:text-emerald-300 mt-1">{fmtUsd((valueLaborOn ? laborAnnual : 0) + (valueBizOn ? bizAnnual : 0))}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">Annual operating value · {fmtUsd(laborHorizon + bizHorizon)} over {valueHorizon} yr · {totalFte.toFixed(1)} FTE model</div></div>
+                <div className="ui-card p-4 border-blue-200 dark:border-blue-800"><div className="text-[10px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-300">Competitor takeout</div><div className="text-2xl font-black text-blue-700 dark:text-blue-300 mt-1">{fmtUsd(impliedAnnualTotal)}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">Annual · {fmtUsd(impliedHorizonTotal)} over {valueHorizon} yr{spendCount ? ` · ${spendCount} spend line${spendCount === 1 ? '' : 's'}` : ' · enter spend or Use RVTools est'}</div></div>
+                <div className="ui-card p-4"><div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Averages source</div><div className="text-[10px] text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">{usingSheet ? `${sheetRows.length} rows from the Value of VCF sheet (vendor overrides industry).` : 'Built-in industry averages. Add a Value of VCF tab in the baseline Google Sheet to tune per vendor.'} Blended takeout {blended}% across {activeLanes.length} lanes.</div></div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button type="button" onClick={suggestFromDesign} className="text-xs font-bold px-3 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900">Suggest from this design</button>
+                <button type="button" onClick={useEstateEstimates} disabled={!(estSpend.storage > 0)} className="text-xs font-bold px-3 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 disabled:opacity-40">Use RVTools storage estimate</button>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">HLD / sizers: {[vsanInDesign && 'vSAN', derivedAvi && 'Avi', advancedSec && 'vDefend', recoveryInDesign && 'Live/Cyber Recovery', complianceScope.VKS && 'VKS', derivedAuto && 'Automation', k8sGuests && `${k8sGuests} K8s guests`].filter(Boolean).join(' · ') || 'Core VCF only'}. Suggestion checks lanes from this design; it does not lock them.</span>
+              </div>
+
+              <div className="ui-card p-4 space-y-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Biggest impact — this estate, not blank Get Started</div>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 max-w-3xl leading-relaxed">VVM Labor F14 and Business F4 start empty. We fill labor and downtime from RVTools (VMs, hosts, provisioned TiB, vCenters) crossed with HLD coverage. Competitor invoices still matter for takeout; they are not the VCF operating-model story.</p>
+                  </div>
+                  <div className={`text-xs font-black ${impactMissing.length ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{impactMissing.length ? `${impactMissing.length} still to fill` : 'Drivers filled'}</div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                      <tr>
+                        <th className="py-1 pr-3">Rank</th>
+                        <th className="py-1 pr-3">Status</th>
+                        <th className="py-1 pr-3">Data point</th>
+                        <th className="py-1 pr-3">Template</th>
+                        <th className="py-1">Why it moves the outcome</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {impactDrivers.map((d) => (
+                        <tr key={d.title} className={d.filled ? 'text-slate-700 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400'}>
+                          <td className="py-2 pr-3 font-black">{d.rank}</td>
+                          <td className="py-2 pr-3 font-black uppercase tracking-widest text-[9px]">{d.filled ? <span className="text-emerald-700 dark:text-emerald-300">Filled</span> : <span className="text-amber-700 dark:text-amber-300">Needed</span>}</td>
+                          <td className="py-2 pr-3 font-bold text-slate-800 dark:text-slate-100">{d.title}</td>
+                          <td className="py-2 pr-3 whitespace-nowrap">{d.template}</td>
+                          <td className="py-2 leading-relaxed">{d.why}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {laneOn('storage') && (
+                <div className="ui-card p-4 flex flex-wrap gap-4 items-start">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Storage play</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => { setValueStoragePlay('HCI_DEFEND'); if (valueCompetitors.storage !== 'NUTANIX') setComp('storage', 'NUTANIX'); }} className={`px-3 py-1.5 text-xs font-black rounded ${valueStoragePlay === 'HCI_DEFEND' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>Defend vs Nutanix HCI</button>
+                      <button type="button" onClick={() => { setValueStoragePlay('DISAGG_REPLACE'); if (valueCompetitors.storage === 'NUTANIX') setComp('storage', 'NIMBLE'); }} className={`px-3 py-1.5 text-xs font-black rounded ${valueStoragePlay === 'DISAGG_REPLACE' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>Replace Nimble / NetApp with vSAN disaggregated</button>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed max-w-3xl">{storageStory}</p>
+                </div>
+              )}
+
+              <div className="ui-card p-4 space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Directional ROI — all competitors</div>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 max-w-3xl leading-relaxed">Same formula for every checked vendor. VMs/hosts/GB come from RVTools; coverage comes from HLD and the specialist sizers. Leave-vSphere cost is estate-once. Labor and downtime are separate VCF operating-value checkboxes below — they are not competitor takeout.</p>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+                    <input type="checkbox" className="h-4 w-4 accent-blue-600" checked={valueCountSwitchCost} onChange={() => setValueCountSwitchCost(on => !on)} />
+                    Include avoided leave-vSphere cost
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">VCF annual subscription<div><input type="text" inputMode="decimal" placeholder="$0" className="mt-1 w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100" value={valueVcfAnnual} onChange={(e) => setValueVcfAnnual(e.target.value)} /></div></label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Current VMware annual<div><input type="text" inputMode="decimal" placeholder="$0" className="mt-1 w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100" value={valueCurrentVmware} onChange={(e) => setValueCurrentVmware(e.target.value)} /></div></label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">New-node + support override{anyNewNodes && valueCountSwitchCost && !parseSpend(valueSwitchServers) && switchServersEst > 0 && <span className="normal-case font-medium"> · est {fmtUsd(switchServersEst)}</span>}<div><input type="text" inputMode="decimal" disabled={!valueCountSwitchCost || !anyNewNodes} placeholder={anyNewNodes && switchServersEst > 0 ? String(Math.round(switchServersEst)) : 'n/a'} className="mt-1 w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 disabled:opacity-50" value={valueSwitchServers} onChange={(e) => setValueSwitchServers(e.target.value)} /></div></label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">VM migrate override{maxMigPerVm > 0 && valueCountSwitchCost && !parseSpend(valueSwitchMigration) && switchMigEst > 0 && <span className="normal-case font-medium"> · ${maxMigPerVm}/VM · est {fmtUsd(switchMigEst)}</span>}<div><input type="text" inputMode="decimal" disabled={!valueCountSwitchCost || maxMigPerVm <= 0} placeholder={maxMigPerVm > 0 && switchMigEst > 0 ? String(Math.round(switchMigEst)) : 'n/a'} className="mt-1 w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 disabled:opacity-50" value={valueSwitchMigration} onChange={(e) => setValueSwitchMigration(e.target.value)} /></div></label>
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+                  <div><div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Hurdle (net-new VCF)</div><div className="text-lg font-black text-slate-900 dark:text-slate-100">{fmtUsd(netNewVcfHorizon)}</div><div className="text-[10px] text-slate-500">{valueHorizon}-yr · sub − current VMware</div></div>
+                  <div><div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Takeout from lanes</div><div className="text-lg font-black text-blue-700 dark:text-blue-300">{fmtUsd(impliedHorizonTotal)}</div><div className="text-[10px] text-slate-500">Each vendor: spend × directional %</div></div>
+                  <div><div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Avoided leave (once)</div><div className="text-lg font-black text-blue-700 dark:text-blue-300">{fmtUsd(switchTotal)}</div><div className="text-[10px] text-slate-500">{!valueCountSwitchCost ? 'Unchecked' : leaveLanes.length ? `${anyNewNodes ? 'New nodes + ' : ''}${maxMigPerVm ? `$${maxMigPerVm}/VM` : 'no migrate'} · not double-counted` : 'No leave-vSphere vendor checked'}</div></div>
+                  <div><div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Labor + downtime</div><div className="text-lg font-black text-emerald-700 dark:text-emerald-300">{fmtUsd(laborHorizon + bizHorizon)}</div><div className="text-[10px] text-slate-500">{valueHorizon}-yr · {valueLaborOn ? 'labor on' : 'labor off'} · {valueBizOn ? 'downtime on' : 'downtime off'}</div></div>
+                  <div className={roiReady && vcfAnnual > 0 ? (roiGap <= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300') : ''}>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">To positive ROI</div>
+                    <div className="text-lg font-black">{vcfAnnual > 0 ? (roiGap <= 0 ? 'Covered' : fmtUsd(roiGap)) : 'Enter VCF $'}</div>
+                    <div className="text-[10px] text-slate-500">{vcfAnnual > 0 ? (roiGap <= 0 ? `Sources exceed hurdle by ${fmtUsd(Math.abs(roiGap))}` : 'Need more invoices, labor, or leave-cost') : 'Then we net sources vs subscription'}</div>
+                  </div>
+                </div>
+                {valuePctSource === 'VVM' && (
+                  <p className="text-[10px] text-amber-800 dark:text-amber-200">VVM directional uses the MAVERIK-shaped 5-year category takeouts (compute 32%, storage 65%, network 41%). Leave-cost units are from that file: $38,657/node, $920/VM off vSphere, $1,672/VM OpenShift Virt. Do not present them as a quote.</p>
+                )}
+              </div>
+
+              <div className="ui-card p-4 space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">VCF operating value — labor & business impact</div>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 max-w-3xl leading-relaxed">This is the VCF close. Ratios are VVM-shaped (1 server admin / 1,000 VMs, 0.7 storage admin / 300 TiB, 1 network admin / 1,000 VMs, ~$149k fully burdened) applied to <em>this</em> RVTools estate. Productivity is 48–50% with Automation / vSAN in the HLD, haircut if those are off. Downtime is internal IT only — we do not invent customer revenue.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+                      <input type="checkbox" className="h-4 w-4 accent-emerald-600" checked={valueLaborOn} onChange={() => setValueLaborOn(on => !on)} />
+                      Include labor
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+                      <input type="checkbox" className="h-4 w-4 accent-emerald-600" checked={valueBizOn} onChange={() => setValueBizOn(on => !on)} />
+                      Include downtime
+                    </label>
+                  </div>
+                </div>
+                {vms === 0 ? (
+                  <p className="text-[11px] text-slate-500">Upload RVTools to size FTEs from VMs, hosts, and provisioned disk.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                        <tr>
+                          <th className="py-1 pr-3">Line</th>
+                          <th className="py-1 pr-3 text-right">FTEs</th>
+                          <th className="py-1 pr-3 text-right">Productivity</th>
+                          <th className="py-1 pr-3 text-right">Annual</th>
+                          <th className="py-1">Cross-ref</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {laborLines.map((line) => (
+                          <tr key={line.id} className={valueLaborOn ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400 dark:text-slate-500'}>
+                            <td className="py-2 pr-3 font-bold">{line.label}</td>
+                            <td className="py-2 pr-3 text-right font-black">{line.fte.toFixed(2)}</td>
+                            <td className="py-2 pr-3 text-right font-black">{Math.round(line.pct * 100)}%</td>
+                            <td className="py-2 pr-3 text-right font-black text-emerald-700 dark:text-emerald-300">{valueLaborOn ? fmtUsd(line.annual) : '—'}</td>
+                            <td className="py-2 text-[10px] leading-relaxed">{line.why}</td>
+                          </tr>
+                        ))}
+                        {bizLines.map((line) => (
+                          <tr key={line.id} className={valueBizOn ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400 dark:text-slate-500'}>
+                            <td className="py-2 pr-3 font-bold">{line.label}</td>
+                            <td className="py-2 pr-3 text-right">—</td>
+                            <td className="py-2 pr-3 text-right">{hldIncDR ? '21%' : '10–15%'}</td>
+                            <td className="py-2 pr-3 text-right font-black text-emerald-700 dark:text-emerald-300">{valueBizOn ? fmtUsd(line.annual) : '—'}</td>
+                            <td className="py-2 text-[10px] leading-relaxed">{line.why}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <div className="text-[10px] text-slate-500 dark:text-slate-400">{clusters.toLocaleString()} clusters · {vcenters.toLocaleString()} vCenters{vsanHosts ? ` · ${vsanHosts} vSAN-flagged hosts` : ''} · ${FTE_BURDEN.toLocaleString()} burdened FTE. {hostsSaved ? `Optimize projects −${hostsSaved} hosts vs current.` : 'Open Optimize if you want host recapture in the estate chip.'}</div>
+              </div>
+
+              <div className="ui-card overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-800 text-white text-[10px] uppercase tracking-widest">
+                    <tr>
+                      <th className="p-3 w-10">On</th>
+                      <th className="p-3">Lane / VMware offer</th>
+                      <th className="p-3">Competing with</th>
+                      <th className="p-3">VMware motion</th>
+                      <th className="p-3">Annual spend on competitor</th>
+                      <th className="p-3 text-right">3 yr</th>
+                      <th className="p-3 text-right">5 yr</th>
+                      <th className="p-3 text-right">7 yr</th>
+                      <th className="p-3 text-right">Implied annual</th>
+                      <th className="p-3">Estate / sizer</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {lanes.map(lane => (
+                      <tr key={lane.id} className={lane.on ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-950 text-slate-400 dark:text-slate-500'}>
+                        <td className="p-3 align-top">
+                          <input type="checkbox" className="h-4 w-4 accent-blue-600" checked={lane.on} disabled={lane.locked} onChange={() => toggleLane(lane.id)} aria-label={`Include ${lane.title} in TCO takeout`} />
+                        </td>
+                        <td className="p-3 align-top">
+                          <div className="font-black text-slate-800 dark:text-slate-100">{lane.title}</div>
+                          <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5">{lane.vmware}</div>
+                          {lane.locked && <div className="text-[9px] font-bold uppercase tracking-widest text-blue-500 mt-1">Always on</div>}
+                          {!lane.on && !lane.locked && <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Unchecked</div>}
+                          {hldSuggests[lane.id] && !lane.locked && <div className="text-[9px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mt-1">In this design</div>}
+                        </td>
+                        <td className="p-3 align-top">
+                          <select disabled={!lane.on} className="w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 disabled:opacity-50" value={valueCompetitors[lane.id]} onChange={(e) => setComp(lane.id, e.target.value)}>
+                            {(catalogs[lane.id] || []).map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                          </select>
+                        </td>
+                        <td className="p-3 align-top">
+                          {lane.on ? (
+                            <>
+                              <div className={`text-[9px] font-black uppercase tracking-widest ${lane.motion.leave ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{lane.motion.leave ? (lane.motion.newNodes ? 'Leave + new nodes' : 'Leave vSphere') : 'Takeout only'}</div>
+                              <div className="text-[10px] leading-relaxed mt-1">{lane.motion.why}</div>
+                            </>
+                          ) : '—'}
+                        </td>
+                        <td className="p-3 align-top">
+                          <input type="text" inputMode="decimal" disabled={!lane.on} placeholder={lane.estateEst > 0 ? `est ${Math.round(lane.estateEst)}` : '$0'} className="w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 disabled:opacity-50" value={valueLaneSpend[lane.id]} onChange={(e) => setSpend(lane.id, e.target.value)} aria-label={`Annual spend on ${lane.title} competitor`} />
+                          {lane.on && lane.estateEst > 0 && !lane.spend && <div className="text-[9px] text-slate-500 mt-1">RVTools × VVM $2/GB · 15% annual</div>}
+                        </td>
+                        <td className={`p-3 text-right font-black align-top ${lane.on && valueHorizon === 3 ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{lane.on ? `${lane.pct[3]}%` : '—'}</td>
+                        <td className={`p-3 text-right font-black align-top ${lane.on && valueHorizon === 5 ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{lane.on ? `${lane.pct[5]}%` : '—'}</td>
+                        <td className={`p-3 text-right font-black align-top ${lane.on && valueHorizon === 7 ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{lane.on ? `${lane.pct[7]}%` : '—'}</td>
+                        <td className="p-3 text-right font-black align-top text-blue-700 dark:text-blue-300">{lane.on ? fmtUsd(lane.impliedAnnual) : '—'}</td>
+                        <td className="p-3 text-[10px] leading-relaxed max-w-sm align-top">
+                          {lane.evidence.length ? (
+                            <div className="flex flex-wrap gap-1 mb-1">
+                              {lane.evidence.map((chip) => <span key={chip} className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[9px] font-bold text-slate-600 dark:text-slate-300">{chip}</span>)}
+                            </div>
+                          ) : null}
+                          {lane.on ? `${lane.story}${lane.pct.source ? ` Source: ${lane.pct.source}.` : ''}` : lane.whyOut}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-4 text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed">
+                <strong>Planning aid, not a quote.</strong> Competitor formula: (their spend × directional %) + avoided leave-vSphere cost (estate-once) + labor/downtime (if checked) − (VCF subscription − current VMware). Leave cost is max $/VM and nodes once so Hyper-V + Nutanix does not double-count. Nimble/NetApp/Cisco/Palo/F5/Veeam are takeout-only. Units from VVM/PCMO: $38,657/node, $920/VM off vSphere, $1,672/VM OpenShift Virt, $149,335 burdened FTE. Labor uses this RVTools estate, not empty VVM FTE cells.
+              </div>
+            </div>
+          </div>
+        );
+      };
 
       // THIS IS THE MAIN UI RETURN BLOCK THAT GOT DELETED
       return (
@@ -14406,6 +15128,7 @@ const architectureMath = useMemo(() => {
                {activeModule === 'EDGE' && <VcfEdgeBlueprintDesigner rawRvData={rawRvData} siteProfiles={siteProfiles} setSiteProfiles={setSiteProfiles} legacyClusters={legacyClusters} edgeCandidateClusters={edgeCandidateClusters} />}
                {activeModule === 'ARCHITECTURE' && renderArchitecture()}
                {activeModule === 'FLEET' && renderFleetDesign()}
+               {activeModule === 'VALUE_VCF' && renderValueOfVcf()}
                {activeModule === 'VSAN_SIZER' && <VsanEsaSizer rawRvData={rawRvData} readinessResults={readinessResults} totalVcfCores={totalVcfCores} setTotalVcfCores={setManualVcfCores} />}
                {activeModule === 'DR_SIZER' && <DrLiveRecoverySizer rawRvData={rawRvData} readinessResults={readinessResults} />}
                {activeModule === 'CR_SIZER' && <CyberRecoverySizer rawRvData={rawRvData} readinessResults={readinessResults} />}
