@@ -12961,11 +12961,24 @@ const architectureMath = useMemo(() => {
             );
          }
 
+         const placementGroupRank_ = (name) => {
+            const n = String(name || '').toLowerCase();
+            if (n.includes('avi')) return 80;
+            if (n.includes('security services') || n.includes('(ssp)') || /\bssp\b/.test(n)) return 90;
+            if (n.includes('management services')) return 10;
+            if (n.includes('fleet')) return 20;
+            if (n.includes('management domain')) return 30;
+            if (n.includes('workload domain')) return 40;
+            return 70;
+         };
          const groupings = [...new Set(normalizedSizing.map(r => r.group))].sort((a, b) => {
-             if (a.toLowerCase() === 'vcf management services') return -1;
-             if (b.toLowerCase() === 'vcf management services') return 1;
+             const ra = placementGroupRank_(a);
+             const rb = placementGroupRank_(b);
+             if (ra !== rb) return ra - rb;
              return a.localeCompare(b);
          });
+         const coreGroupings = groupings.filter(g => placementGroupRank_(g) < 70);
+         const optionalGroupings = groupings.filter(g => placementGroupRank_(g) >= 70);
 
          let displayedClusters = architectureMath?.clusterEvaluations || [];
          if (archFilter === 'VIABLE') displayedClusters = displayedClusters.filter(c => c.status !== 'red');
@@ -13128,22 +13141,31 @@ const architectureMath = useMemo(() => {
                           <span className="mt-1 text-slate-400 dark:text-slate-500 text-xs font-black transition-transform group-open:rotate-90">▶</span>
                           <div>
                             <h3 className="font-black text-slate-900 dark:text-slate-100">Services in scope</h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">VCF Sizing catalog — enable appliances and pick profiles. Management services are required; Avi / optional rows stay collapsed with the rest of the catalog.</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Core first: Management Services → Fleet → Management Domain → Workload Domain. Avi, SSP, and other add-ons stay below so they do not bury required placement.</p>
                           </div>
                         </div>
                         <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{enabledCatalogCount} enabled</span>
                      </summary>
-                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                           {groupings.map((group, groupIdx) => {
+                     {(() => {
+                       const renderPlacementGroup = (group, groupIdx, allGroups) => {
                               const groupComps = [...new Set(normalizedSizing.filter(r => r.group === group).map(r => r.component))]
                                 .filter(comp => !isSimpleCatalogComponent_(comp));
                               if (groupComps.length === 0) return null;
                               const isAviGroup = /avi/i.test(group);
-                              const isFirstAviGroup = isAviGroup && !groupings.slice(0, groupIdx).some(g => /avi/i.test(g) && normalizedSizing.some(r => r.group === g));
+                              const isSspGroup = /security services|ssp/i.test(group);
+                              const isFirstAviGroup = isAviGroup && !allGroups.slice(0, groupIdx).some(g => /avi/i.test(g) && normalizedSizing.some(r => r.group === g));
+                              const rank = placementGroupRank_(group);
+                              const shellClass = group.toLowerCase().includes('management services')
+                                ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600'
+                                : isAviGroup || isSspGroup
+                                  ? 'border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40'
+                                  : rank <= 40
+                                    ? 'border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-900'
+                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900';
 
                               return (
-                                 <div key={group} id={isFirstAviGroup ? 'arch-avi-sizing' : undefined} className={`p-3 rounded-xl border ${group.toLowerCase() === 'vcf management services' ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600' : isAviGroup ? 'border-blue-300 dark:border-blue-700 bg-blue-50/40 dark:bg-blue-950/30' : 'border-slate-200 dark:border-slate-700'}`}>
-                                    <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 border-b pb-1">{group}</h4>
+                                 <div key={group} id={isFirstAviGroup ? 'arch-avi-sizing' : undefined} className={`p-3 rounded-xl border h-fit self-start ${shellClass}`}>
+                                    <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-200 dark:border-slate-700 pb-1">{group}</h4>
                                     <div className="space-y-3">
                                        {groupComps.map(comp => {
                                           const sel = sizingSelections[comp];
@@ -13176,8 +13198,39 @@ const architectureMath = useMemo(() => {
                                     </div>
                                  </div>
                               );
-                           })}
-                     </div>
+                       };
+
+                       return (
+                         <div className="space-y-5">
+                           <div>
+                             <div className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300 mb-2">Core VCF placement</div>
+                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+                               {coreGroupings.map((group, groupIdx) => renderPlacementGroup(group, groupIdx, coreGroupings))}
+                             </div>
+                           </div>
+                           {optionalGroupings.length > 0 && (
+                             <details
+                               className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/40 p-3 group/opt"
+                               onClick={(e) => e.stopPropagation()}
+                             >
+                               <summary
+                                 className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-3"
+                                 onClick={(e) => e.stopPropagation()}
+                               >
+                                 <div>
+                                   <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Optional add-ons · Avi / SSP / other</div>
+                                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Collapsed by default so Fleet and domain placement stay on screen.</p>
+                                 </div>
+                                 <span className="text-xs font-black text-slate-400 dark:text-slate-500 transition-transform group-open/opt:rotate-90">▶</span>
+                               </summary>
+                               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start mt-3">
+                                 {optionalGroupings.map((group, groupIdx) => renderPlacementGroup(group, groupIdx, optionalGroupings))}
+                               </div>
+                             </details>
+                           )}
+                         </div>
+                       );
+                     })()}
                   </details>
 
                   <details className="ui-card p-5 group" open>
