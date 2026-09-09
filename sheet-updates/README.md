@@ -26,6 +26,10 @@ File: `Design_IDs_Add.csv`
 
 Without these, 2-NIC and OSA selections stay on baseline IDs only (export still works; coverage shows a temporary “until sheet loaded” hint).
 
+## 3. VCF Sizing — optional `fleet_dr` column
+
+See `VCF_Sizing_Fleet_DR_Column.md`. Placement Engine **DR only** mode uses this to decide which catalog rows to size at the recovery site (overrides name heuristics).
+
 ## After import
 
 1. Reload the web app (or re-run `getVcgCoreData`).
