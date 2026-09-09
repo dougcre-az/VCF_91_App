@@ -971,6 +971,8 @@
       vksSupervisor: { label: 'vSphere Supervisor / VKS', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere-supervisor/8-0/using-tkg-service-with-vsphere-supervisor.html', note: 'Supervisor zones & guest clusters' },
       liveRecovery: { label: 'VMware Live Recovery / vSphere Replication', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/live-recovery.html', note: 'RPO, enhanced replication' },
       fleetDr: { label: 'VCF Fleet Disaster Recovery', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/security-modernization/vcf-disaster-recovery.html', note: 'Multi-instance fleet DR — Protection & Recovery + backup/restore for Ops, Automation, MS' },
+      fleetDrChecklist: { label: 'Failover checklist (SDDC management apps)', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/fleet-management/vcf-fleet-disaster-recovery/fleet-disaster-recovery-task-library/failover-of-the-sddc-management-applications/failover-checklist-for-the-sddc-management-applications-for-vmware-cloud-foundation.html', note: 'Pre-failover checks — P&R, NSX Edges, replication status' },
+      opsDeploymentModels: { label: 'VCF Operations deployment models', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/vmware-cloud-foundation-concepts/vcf-operations-deployment-models.html', note: 'Ops / CA placement across fleet topologies' },
       cyberRecovery: { label: 'VMware Cyber Recovery', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1.html', note: 'IRE / clean-room recovery patterns' },
       vdefendSsp: { label: 'vDefend / Security Services Platform', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/nsx/vmware-vsafety/9.html', note: 'SSP, IDS/MPS/NDR sensors' },
       vdefend1234Blog: { label: 'vDefend DFW 1-2-3-4 (Security blog)', href: 'https://blogs.vmware.com/security/2025/11/vdefend-dfw-1-2-3-4-vcf.html', note: 'Prescriptive Zero Trust journey overview' },
@@ -7717,6 +7719,11 @@ const VCFApp = () => {
       // Fleet DR: second VCF instance is the recovery site (Broadcom Fleet Disaster Recovery blueprint).
       const [hldDrFleetPair, setHldDrFleetPair] = useState(false);
       const [hldDrSiteMode, setHldDrSiteMode] = useState('GREENFIELD'); // GREENFIELD | EXISTING
+      // Placement Engine: FULL_ESTATE = all selected services (× instances when Fleet DR);
+      // DR_MINIMUM = recovery-site only — auto-select Fleet DR blueprint targets, exclude restore-only pre-deploys.
+      const [placementPayloadScope, setPlacementPayloadScope] = useState('FULL_ESTATE'); // FULL_ESTATE | DR_MINIMUM
+      const preDrMinimumSelectionsRef = useRef(null);
+      const preDrMinimumWlCountRef = useRef(null);
 
       const [hldIncSEC, setHldIncSEC] = useState(false);
       // Avi / HCX / DSM scope is controlled via architectDecisionInputs.*Scope dropdowns in Phase 6
@@ -8157,6 +8164,75 @@ const VCFApp = () => {
         if (/worker/.test(n)) return 'worker';
         return null;
       };
+
+      // Fleet DR blueprint roles for catalog rows (recovery-site sizing).
+      // https://techdocs.broadcom.com/.../vcf-disaster-recovery.html
+      // Ops / Ops for networks → P&R; Automation → redeploy+restore; MS components marked ** → restore only (do not pre-deploy).
+      const fleetDrCatalogRole_ = (compName) => {
+        const n = String(compName || '').toLowerCase();
+        if (/identity\s*broker|\bvidb\b/.test(n)) return 'RESTORE_ONLY';
+        if (/software\s*depot/.test(n) || (/\bdepot\b/.test(n) && !/operations/.test(n))) return 'RESTORE_ONLY';
+        if (/\bsalt\b/.test(n)) return 'RESTORE_ONLY';
+        if (/fleet\s*lifecycle|fleet\s*lcm/.test(n)) return 'RESTORE_ONLY';
+        if (/workload\s*domain/.test(n)) return 'OPTIONAL';
+        if (/avi|load\s*balancer|hcx|data\s*services|\bdsm\b|security\s*services|\bssp\b|vdefend|private\s*ai|licensing\s*hub|real-?time\s*metrics/.test(n)) return 'OPTIONAL';
+        if (msRuntimeRole_(compName)) return 'DR_FOUNDATION';
+        if (/operations\s+for\s+networks/.test(n)) return 'DR_TARGET';
+        if (/vcf\s*operations|vrealize\s*operations/.test(n) && !/networks/.test(n)) return 'DR_TARGET';
+        if (/automation/.test(n)) return 'DR_TARGET';
+        if (/log\s*management|vcf\s*logs/.test(n)) return 'DR_TARGET';
+        return 'DEFAULT';
+      };
+
+      const applyFleetDrMinimumSelections_ = (prev) => {
+        const next = {};
+        Object.entries(prev || {}).forEach(([name, config]) => {
+          if (!config) return;
+          const role = fleetDrCatalogRole_(name);
+          let enabled = false;
+          if (config.isMandatory || role === 'DR_TARGET' || role === 'DR_FOUNDATION') enabled = true;
+          else if (role === 'RESTORE_ONLY' || role === 'OPTIONAL') enabled = false;
+          else enabled = !!config.isMandatory;
+          next[name] = { ...config, enabled };
+        });
+        // Keep Ops-for-Networks collector coupled to its parent.
+        const opsNetKey = Object.keys(next).find((k) => /operations\s+for\s+networks/i.test(k) && !/collector/i.test(k));
+        const collectorKey = Object.keys(next).find((k) => /operations\s+for\s+networks\s+collector/i.test(k));
+        if (opsNetKey && collectorKey && next[collectorKey] && !next[collectorKey].isMandatory) {
+          next[collectorKey] = { ...next[collectorKey], enabled: !!next[opsNetKey].enabled };
+        }
+        return next;
+      };
+
+      const commitPlacementPayloadScope = (scope) => {
+        const nextScope = scope === 'DR_MINIMUM' ? 'DR_MINIMUM' : 'FULL_ESTATE';
+        if (nextScope === placementPayloadScope) return;
+        if (nextScope === 'DR_MINIMUM') {
+          setSizingSelections((prev) => {
+            if (!prev || Object.keys(prev).length === 0) return prev;
+            preDrMinimumSelectionsRef.current = prev;
+            preDrMinimumWlCountRef.current = wlDomainCount;
+            return applyFleetDrMinimumSelections_(prev);
+          });
+          setPlacementPayloadScope('DR_MINIMUM');
+          return;
+        }
+        const snap = preDrMinimumSelectionsRef.current;
+        if (snap) {
+          setSizingSelections(snap);
+          if (preDrMinimumWlCountRef.current != null) setWlDomainCount(preDrMinimumWlCountRef.current);
+          preDrMinimumSelectionsRef.current = null;
+          preDrMinimumWlCountRef.current = null;
+        }
+        setPlacementPayloadScope('FULL_ESTATE');
+      };
+
+      useEffect(() => {
+        if (!hldDrFleetPair && placementPayloadScope === 'DR_MINIMUM') {
+          commitPlacementPayloadScope('FULL_ESTATE');
+        }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [hldDrFleetPair]);
       const pickBestCatalogRow_ = (rows, preferredProfile) => {
         if (!rows?.length) return null;
         const pref = String(preferredProfile || '').toLowerCase();
@@ -8355,7 +8431,13 @@ const VCFApp = () => {
                sizes: sizes 
             };
           });
-          setSizingSelections(initialSelections);
+          if (placementPayloadScope === 'DR_MINIMUM') {
+            preDrMinimumSelectionsRef.current = initialSelections;
+            preDrMinimumWlCountRef.current = wlDomainCount;
+            setSizingSelections(applyFleetDrMinimumSelections_(initialSelections));
+          } else {
+            setSizingSelections(initialSelections);
+          }
         }
       // Intentionally omit wlDomainCount — count sync is handled by commitWlDomainCount / handleComponentToggle so profile choices are preserved.
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -9883,117 +9965,151 @@ const architectureMath = useMemo(() => {
          
          // When Fleet DR / multi-instance / multi-fleet: size every management-domain (and fleet) catalog
          // row for each VCF instance so Placement shows enough CPU/RAM/storage for both sites/fleets.
+         // DR_MINIMUM is recovery-site only (single instance multipliers) — full-estate ceiling is computed separately.
          const gfInstances = Math.max(2, parseInt(gfInstanceCount, 10) || 2);
          const bfInstances = Math.max(2, 1 + (multiInstanceClusters?.length || 0));
-         const multiInstanceSizing = hldInstanceStrategy === 'MULTI_INSTANCE' || hldDrFleetPair;
+         const drMinimumSizing = placementPayloadScope === 'DR_MINIMUM' && hldDrFleetPair;
+         const multiInstanceSizing = !drMinimumSizing && (hldInstanceStrategy === 'MULTI_INSTANCE' || hldDrFleetPair);
          const mgmtInstanceCount = multiInstanceSizing
            ? (archMode === 'GREENFIELD' ? gfInstances : bfInstances)
            : 1;
          const fleetPayloadCount = architectDecisionInputs?.hldFleetBoundary === 'MULTIPLE_FLEETS'
            ? Math.max(2, parseInt(fleetCount, 10) || 2)
-           : (hldDrFleetPair ? mgmtInstanceCount : 1);
+           : (multiInstanceSizing && hldDrFleetPair ? mgmtInstanceCount : 1);
          
-         Object.entries(sizingSelections).forEach(([compName, config]) => {
-            if (!config?.enabled) return;
-            
-            let targetCompName = compName;
-            let usedSimple = false;
-            let compRows = [];
-            let fellBackToFull = false;
-            let resolveNote = null;
-            let bestRow = null;
+         const resolveEnabledPayload_ = (selections, opts = {}) => {
+           const useMulti = !!opts.multiInstance;
+           const mgmtN = useMulti ? (archMode === 'GREENFIELD' ? gfInstances : bfInstances) : 1;
+           const fleetN = architectDecisionInputs?.hldFleetBoundary === 'MULTIPLE_FLEETS'
+             ? Math.max(2, parseInt(fleetCount, 10) || 2)
+             : (useMulti && hldDrFleetPair ? mgmtN : 1);
+           const wldN = opts.wlCount != null ? Math.max(0, parseInt(opts.wlCount, 10) || 0) : Math.max(0, parseInt(wlDomainCount, 10) || 0);
+           let vcpu = 0; let ram = 0; let storage = 0;
+           const components = [];
+           Object.entries(selections || {}).forEach(([compName, config]) => {
+             if (!config?.enabled) return;
+             let targetCompName = compName;
+             let usedSimple = false;
+             let compRows = [];
+             let fellBackToFull = false;
+             let resolveNote = null;
+             let bestRow = null;
+             const msOverride = (!opts.skipMsPair && msPair?.bySelection?.[compName]) || null;
+             if (msOverride?.row) {
+               bestRow = msOverride.row;
+               usedSimple = !!msOverride.usedSimple;
+               fellBackToFull = !!msOverride.fellBackToFull;
+               targetCompName = bestRow.component;
+               resolveNote = msOverride.note;
+             } else {
+               const wantSimple = allowSimpleBands && hostsForSimple != null && (
+                 hostsForSimple <= 2
+                 || (hostsForSimple === 3 && compName.toLowerCase().includes('nsx manager'))
+               );
+               if (wantSimple) {
+                 compRows = findSimpleRowsForComponent_(normalizedSizing, compName);
+                 if (compRows.length) {
+                   usedSimple = true;
+                   targetCompName = compRows[0].component;
+                 } else {
+                   if (!opts.quietMissing) missingSimple.push(`${normalizeComponentBaseName_(compName)} (Simple)`);
+                   compRows = findFullRowsForComponent_(normalizedSizing, compName);
+                   fellBackToFull = compRows.length > 0;
+                   targetCompName = compName;
+                 }
+               } else {
+                 compRows = findFullRowsForComponent_(normalizedSizing, compName);
+                 if (compRows.length === 0) {
+                   compRows = normalizedSizing.filter(r => r.component === compName && !isSimpleSizingRow_(r));
+                 }
+                 if (compRows.length === 0) {
+                   compRows = normalizedSizing.filter(r => r.component === compName);
+                 }
+               }
+               bestRow = compRows.find(r => r.profile.toLowerCase() === config.profile.toLowerCase());
+               if (!bestRow && usedSimple) {
+                 bestRow = compRows.find(r => String(r.profile).toLowerCase() === 'simple') || compRows[0];
+               }
+               if (!bestRow && compRows.length > 0) bestRow = compRows[0];
+             }
+             if (!bestRow) return;
+             let multiplier = 1;
+             const groupL = String(bestRow.group || '').toLowerCase();
+             if (groupL.includes('workload domain')) {
+               multiplier = wldN;
+             } else if (groupL.includes('fleet')) {
+               multiplier = Math.max(1, fleetN);
+             } else if (useMulti) {
+               multiplier = Math.max(1, mgmtN);
+             }
+             const addVcpu = (bestRow.vcpu || 0) * multiplier;
+             const addRam = (bestRow.ram || 0) * multiplier;
+             const addStorage = (bestRow.storage || 0) * multiplier;
+             vcpu += addVcpu;
+             ram += addRam;
+             storage += addStorage;
+             if (!opts.summaryOnly) {
+               const linkedIds = parseDesignIdList_(
+                 [...(bestRow.designIds || []), ...(bestRow.funnelCfgIds || [])].join(';')
+               );
+               const designLinks = enrichDesignIds_(linkedIds);
+               const primaryLink = designLinks.find((d) => d.sourceUrl) || designLinks[0];
+               components.push({
+                 selection: compName,
+                 resolvedAs: bestRow.component,
+                 profile: bestRow.profile,
+                 availability: bestRow.availability || (usedSimple ? 'Simple' : 'HA'),
+                 group: bestRow.group,
+                 nodes: bestRow.nodes || 0,
+                 multiplier,
+                 vcpu: addVcpu,
+                 ram: addRam,
+                 storage: addStorage,
+                 usedSimple,
+                 fellBackToFull,
+                 note: resolveNote,
+                 msPairCorrected: !!(msOverride && msPair?.inverted && usedSimple),
+                 designIds: linkedIds,
+                 designLinks,
+                 sourceUrl: bestRow.sourceUrl || primaryLink?.sourceUrl || '',
+               });
+             }
+           });
+           return { targetVcpu: vcpu, targetRam: ram, targetStorage: storage, resolvedComponents: components, mgmtInstanceCount: useMulti ? mgmtN : 1, fleetPayloadCount: fleetN };
+         };
 
-            const msOverride = msPair?.bySelection?.[compName];
-            if (msOverride?.row) {
-              bestRow = msOverride.row;
-              usedSimple = !!msOverride.usedSimple;
-              fellBackToFull = !!msOverride.fellBackToFull;
-              targetCompName = bestRow.component;
-              resolveNote = msOverride.note;
-            } else {
-              const wantSimple = allowSimpleBands && hostsForSimple != null && (
-                hostsForSimple <= 2
-                || (hostsForSimple === 3 && compName.toLowerCase().includes('nsx manager'))
-              );
+         const primary = resolveEnabledPayload_(sizingSelections, { multiInstance: multiInstanceSizing });
+         targetVcpu = primary.targetVcpu;
+         targetRam = primary.targetRam;
+         targetStorage = primary.targetStorage;
+         resolvedComponents.push(...primary.resolvedComponents);
 
-              if (wantSimple) {
-                compRows = findSimpleRowsForComponent_(normalizedSizing, compName);
-                if (compRows.length) {
-                  usedSimple = true;
-                  targetCompName = compRows[0].component;
-                } else {
-                  missingSimple.push(`${normalizeComponentBaseName_(compName)} (Simple)`);
-                  compRows = findFullRowsForComponent_(normalizedSizing, compName);
-                  fellBackToFull = compRows.length > 0;
-                  targetCompName = compName;
-                }
-              } else {
-                // Full HA / vSAN brownfield / 4+ hosts — never pick Simple sibling or Size=Simple rows
-                compRows = findFullRowsForComponent_(normalizedSizing, compName);
-                if (compRows.length === 0) {
-                  compRows = normalizedSizing.filter(r => r.component === compName && !isSimpleSizingRow_(r));
-                }
-                if (compRows.length === 0) {
-                  compRows = normalizedSizing.filter(r => r.component === compName);
-                }
-              }
-
-              bestRow = compRows.find(r => r.profile.toLowerCase() === config.profile.toLowerCase());
-
-              if (!bestRow && usedSimple) {
-                bestRow = compRows.find(r => String(r.profile).toLowerCase() === 'simple') || compRows[0];
-              }
-              
-              if (!bestRow && compRows.length > 0) {
-                  bestRow = compRows[0];
-              }
-            }
-
-            if (bestRow) {
-                let multiplier = 1;
-                const groupL = String(bestRow.group || '').toLowerCase();
-                if (groupL.includes('workload domain')) {
-                    // 0 = consolidated (no dedicated WLD payload). Do not coerce 0 → 1.
-                    multiplier = Math.max(0, parseInt(wlDomainCount, 10) || 0);
-                } else if (groupL.includes('fleet')) {
-                    // Ops / Automation authority: × fleets, or × DR/instances when sizing both sites together.
-                    multiplier = Math.max(1, fleetPayloadCount);
-                } else if (multiInstanceSizing) {
-                    // Management domain / services / optional add-ons: one payload per VCF instance.
-                    multiplier = Math.max(1, mgmtInstanceCount);
-                }
-                const addVcpu = (bestRow.vcpu || 0) * multiplier;
-                const addRam = (bestRow.ram || 0) * multiplier;
-                const addStorage = (bestRow.storage || 0) * multiplier;
-                targetVcpu += addVcpu;
-                targetRam += addRam;
-                targetStorage += addStorage;
-                const linkedIds = parseDesignIdList_(
-                  [...(bestRow.designIds || []), ...(bestRow.funnelCfgIds || [])].join(';')
-                );
-                const designLinks = enrichDesignIds_(linkedIds);
-                const primaryLink = designLinks.find((d) => d.sourceUrl) || designLinks[0];
-                resolvedComponents.push({
-                  selection: compName,
-                  resolvedAs: bestRow.component,
-                  profile: bestRow.profile,
-                  availability: bestRow.availability || (usedSimple ? 'Simple' : 'HA'),
-                  group: bestRow.group,
-                  nodes: bestRow.nodes || 0,
-                  multiplier,
-                  vcpu: addVcpu,
-                  ram: addRam,
-                  storage: addStorage,
-                  usedSimple,
-                  fellBackToFull,
-                  note: resolveNote,
-                  msPairCorrected: !!(msOverride && msPair?.inverted && usedSimple),
-                  designIds: linkedIds,
-                  designLinks,
-                  sourceUrl: bestRow.sourceUrl || primaryLink?.sourceUrl || '',
-                });
-            }
-         });
+         // Full-estate ceiling for DR_MINIMUM callout (pre-filter snapshot ∪ DR targets × both sites).
+         let fullEstatePayload = null;
+         if (drMinimumSizing) {
+           const snap = preDrMinimumSelectionsRef.current || sizingSelections;
+           const fullSel = {};
+           Object.entries(snap || {}).forEach(([name, config]) => {
+             if (!config) return;
+             const role = fleetDrCatalogRole_(name);
+             const enabled = !!(config.enabled || config.isMandatory || role === 'DR_TARGET' || role === 'DR_FOUNDATION');
+             fullSel[name] = { ...config, enabled };
+           });
+           const fullWl = preDrMinimumWlCountRef.current != null ? preDrMinimumWlCountRef.current : wlDomainCount;
+           const full = resolveEnabledPayload_(fullSel, {
+             multiInstance: true,
+             wlCount: fullWl,
+             skipMsPair: true,
+             quietMissing: true,
+             summaryOnly: true,
+           });
+           fullEstatePayload = {
+             targetVcpu: full.targetVcpu,
+             targetRam: full.targetRam,
+             targetStorage: full.targetStorage,
+             mgmtInstanceCount: full.mgmtInstanceCount,
+           };
+         }
 
          const clusterEvaluations = [];
          const n = displayNvmeMinGb || 0;
@@ -10234,8 +10350,10 @@ const architectureMath = useMemo(() => {
            mgmtInstanceCount,
            fleetPayloadCount,
            multiInstanceSizing,
+           drMinimumSizing,
+           fullEstatePayload,
          };
-      }, [rawRvData, sizingSelections, normalizedSizing, displayNvmeMinGb, optTierRatio, wlDomainCount, archMode, gfHosts, gfCores, gfMemGB, gfCpuRatio, gfMemRatio, gfStorageType, gfNics, fleetMgmtCluster, designIdLookup_, hldInstanceStrategy, hldDrFleetPair, gfInstanceCount, multiInstanceClusters, architectDecisionInputs.hldFleetBoundary, fleetCount]);
+      }, [rawRvData, sizingSelections, normalizedSizing, displayNvmeMinGb, optTierRatio, wlDomainCount, archMode, gfHosts, gfCores, gfMemGB, gfCpuRatio, gfMemRatio, gfStorageType, gfNics, fleetMgmtCluster, designIdLookup_, hldInstanceStrategy, hldDrFleetPair, gfInstanceCount, multiInstanceClusters, architectDecisionInputs.hldFleetBoundary, fleetCount, placementPayloadScope]);
 
       const recaptureMath = useMemo(() => {
         if (!rawRvData || !rawRvData.vHost || !rawRvData.vInfo) return [];
@@ -13545,7 +13663,7 @@ const architectureMath = useMemo(() => {
                          <div className="flex flex-wrap items-start justify-between gap-3">
                            <div>
                              <div className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-300 flex items-center gap-1">DR / recovery VCF instance<SizerInfo text="Per the VCF Fleet Disaster Recovery blueprint: size a second VCF instance management domain at the recovery site. Ops and Ops for networks typically use Protection &amp; Recovery (or Continuous Availability when latency allows). VCF Automation is usually redeployed on the recovery site and restored from backup. Do not pre-deploy Identity Broker or Software Depot on the recovery VCFMS instance if those will be restored there." href={SIZER_DOCS.fleetDr.href} hrefLabel="Fleet DR blueprint" /></div>
-                             <p className="text-[11px] text-violet-900 dark:text-violet-200 mt-1 leading-relaxed">Design Builder marked multi-instance as a Fleet DR pair. Size this recovery management domain with the same N-1 / catalog rules as production — capacity is not shared across sites.</p>
+                             <p className="text-[11px] text-violet-900 dark:text-violet-200 mt-1 leading-relaxed">Design Builder marked multi-instance as a Fleet DR pair. Use <strong>DR only</strong> under Services in scope to auto-select recovery-site minimums; Fit validation then sizes this site alone (not × both instances).</p>
                            </div>
                            <button type="button" onClick={() => { setActiveModule('FLEET'); setHldBuilderView('MGMT_PLANE'); }} className="text-[10px] font-bold text-violet-800 dark:text-violet-300 hover:underline shrink-0">Change on Design Builder →</button>
                          </div>
@@ -13656,7 +13774,7 @@ const architectureMath = useMemo(() => {
                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Core first: Management Services → Fleet → Management Domain → Workload Domain. Avi, SSP, and other add-ons stay below so they do not bury required placement.</p>
                           </div>
                         </div>
-                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{enabledCatalogCount} enabled</span>
+                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{enabledCatalogCount} enabled{placementPayloadScope === 'DR_MINIMUM' ? ' · DR only' : ''}</span>
                      </summary>
                      {(() => {
                        const renderPlacementGroup = (group, groupIdx, allGroups) => {
@@ -13682,18 +13800,23 @@ const architectureMath = useMemo(() => {
                                        {groupComps.map(comp => {
                                           const sel = sizingSelections[comp];
                                           if (!sel) return null;
+                                          const drRole = fleetDrCatalogRole_(comp);
                                           return (
                                              <div key={comp} className="border-l-2 border-slate-300 dark:border-slate-600 pl-3">
-                                                <div className="flex items-start justify-between">
+                                                <div className="flex items-start justify-between gap-2">
                                                    <label className={`text-sm font-bold leading-tight pr-2 flex items-center gap-2 cursor-pointer ${sel.enabled ? 'text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300'}`}>
                                                       <input type="checkbox" className="w-4 h-4 text-blue-600 dark:text-blue-400 rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500 cursor-pointer shrink-0"
                                                          checked={sel.enabled}
-                                                         disabled={sel.isMandatory}
+                                                         disabled={sel.isMandatory || (placementPayloadScope === 'DR_MINIMUM' && drRole === 'RESTORE_ONLY' && !sel.isMandatory)}
                                                          onChange={(e) => handleComponentToggle(comp, e.target.checked)}
                                                       />
                                                       {comp}
                                                    </label>
-                                                   {sel.isMandatory && <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded uppercase font-bold shrink-0">Req</span>}
+                                                   <div className="flex items-center gap-1 shrink-0">
+                                                     {sel.isMandatory && <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded uppercase font-bold">Req</span>}
+                                                     {placementPayloadScope === 'DR_MINIMUM' && drRole === 'DR_TARGET' && <span className="text-[9px] bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-200 px-1.5 py-0.5 rounded uppercase font-bold">DR</span>}
+                                                     {placementPayloadScope === 'DR_MINIMUM' && drRole === 'RESTORE_ONLY' && <span className="text-[9px] bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded uppercase font-bold" title="Restore onto recovery VCFMS — do not pre-deploy">Restore</span>}
+                                                   </div>
                                                 </div>
                                                 {sel.enabled && sel.sizes && sel.sizes.length > 0 && (
                                                    <select
@@ -13714,6 +13837,37 @@ const architectureMath = useMemo(() => {
 
                        return (
                          <div className="space-y-5">
+                           <div className={`rounded-xl border p-4 ${hldDrFleetPair || placementPayloadScope === 'DR_MINIMUM' ? 'border-violet-200 dark:border-violet-800 bg-violet-50/80 dark:bg-violet-950/30' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40'}`}>
+                             <div className="flex flex-wrap items-start justify-between gap-3">
+                               <div className="min-w-0">
+                                 <div className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-300 flex items-center gap-1">
+                                   Placement payload scope
+                                   <SizerInfo text="DR only auto-selects Fleet Disaster Recovery minimums from Broadcom tech docs: Ops + Ops for networks (Protection &amp; Recovery), VCF Automation (redeploy + restore), Log Management, and VCF Management Services runtime. Identity Broker, Software Depot, Salt, and Fleet Lifecycle are restore-only — do not pre-deploy on the recovery VCFMS instance. Avi / SSP / HCX / WLD add-ons stay out of the DR-minimum payload." href={SIZER_DOCS.fleetDr.href} hrefLabel="Fleet DR blueprint" />
+                                 </div>
+                                 <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">Use DR only when sizing the recovery VCF instance. Fit validation then sizes that site alone; full-estate ceiling stays visible in the red callout.</p>
+                               </div>
+                             </div>
+                             <div className="flex flex-wrap gap-4 mt-3">
+                               <label className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-100 cursor-pointer">
+                                 <input type="radio" name="pe-payload-scope" className="h-4 w-4 accent-violet-600" checked={placementPayloadScope === 'FULL_ESTATE'} onChange={() => commitPlacementPayloadScope('FULL_ESTATE')} />
+                                 Full estate (all selected services)
+                               </label>
+                               <label className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-100 cursor-pointer">
+                                 <input type="radio" name="pe-payload-scope" className="h-4 w-4 accent-violet-600" checked={placementPayloadScope === 'DR_MINIMUM'} onChange={() => { if (!hldDrFleetPair) { setHldDrFleetPair(true); setHldIncDR(true); if (hldInstanceStrategy === 'SINGLE_INSTANCE') setHldInstanceStrategy('MULTI_INSTANCE'); } commitPlacementPayloadScope('DR_MINIMUM'); }} />
+                                 DR only (Fleet DR minimum)
+                               </label>
+                             </div>
+                             {placementPayloadScope === 'DR_MINIMUM' && (
+                               <p className="text-[10px] text-violet-900 dark:text-violet-200 mt-2 leading-relaxed">
+                                 Auto-selected from the <SizerDocLink href={SIZER_DOCS.fleetDr.href}>Fleet DR blueprint</SizerDocLink>
+                                 {' · '}
+                                 <SizerDocLink href={SIZER_DOCS.fleetDrChecklist.href}>failover checklist</SizerDocLink>
+                                 {' · '}
+                                 <SizerDocLink href={SIZER_DOCS.opsDeploymentModels.href}>Ops deployment models</SizerDocLink>
+                                 . Restore-only rows stay off so capacity is not double-counted before failover.
+                               </p>
+                             )}
+                           </div>
                            <div>
                              <div className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300 mb-2">Core VCF placement</div>
                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
@@ -13731,7 +13885,7 @@ const architectureMath = useMemo(() => {
                                >
                                  <div>
                                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Optional add-ons · Avi / SSP / other</div>
-                                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Collapsed by default so Fleet and domain placement stay on screen.</p>
+                                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{placementPayloadScope === 'DR_MINIMUM' ? 'Excluded from DR-minimum payload (still listed for reference).' : 'Collapsed by default so Fleet and domain placement stay on screen.'}</p>
                                  </div>
                                  <span className="text-xs font-black text-slate-400 dark:text-slate-500 transition-transform group-open/opt:rotate-90">▶</span>
                                </summary>
@@ -13754,8 +13908,22 @@ const architectureMath = useMemo(() => {
                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Does the management-domain payload fit? Recapture (N-1) stays collapsed below until you need it.</p>
                           </div>
                         </div>
-                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{architectureMath?.targetVcpu || 0} vCPU · {architectureMath?.targetRam || 0} GB</span>
+                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{architectureMath?.targetVcpu || 0} vCPU · {architectureMath?.targetRam || 0} GB{architectureMath?.drMinimumSizing ? ' · DR min' : ''}</span>
                      </summary>
+
+                  {architectureMath?.drMinimumSizing && architectureMath?.fullEstatePayload && (
+                    <div className="mt-4 mb-2 rounded-xl border-2 border-rose-500 dark:border-rose-600 bg-rose-50 dark:bg-rose-950/40 p-4 shadow-sm">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-rose-800 dark:text-rose-300">Full estate in DR can be up to</div>
+                      <div className="flex flex-wrap gap-6 mt-2 text-rose-950 dark:text-rose-100">
+                        <div><span className="text-2xl font-black">{architectureMath.fullEstatePayload.targetVcpu || 0}</span> <span className="text-xs font-bold uppercase tracking-widest text-rose-700 dark:text-rose-300">vCPU</span></div>
+                        <div><span className="text-2xl font-black">{architectureMath.fullEstatePayload.targetRam || 0}</span> <span className="text-xs font-bold uppercase tracking-widest text-rose-700 dark:text-rose-300">GB RAM</span></div>
+                        <div><span className="text-2xl font-black">{((architectureMath.fullEstatePayload.targetStorage || 0) / 1024).toFixed(1)}</span> <span className="text-xs font-bold uppercase tracking-widest text-rose-700 dark:text-rose-300">TB Storage</span></div>
+                      </div>
+                      <p className="text-[11px] text-rose-900 dark:text-rose-200 mt-2 leading-relaxed">
+                        Ceiling if both VCF instances carry the pre–DR-only service set (×{architectureMath.fullEstatePayload.mgmtInstanceCount || 2} sites / instances). Fit validation below uses the <strong>DR-minimum</strong> recovery-site payload only — not this full-estate number.
+                      </p>
+                    </div>
+                  )}
 
                   {/* DYNAMIC PAYLOAD BANNER */}
                   {(() => {
@@ -13795,11 +13963,13 @@ const architectureMath = useMemo(() => {
                                        : 'Full HA (4+ hosts / vSAN brownfield)'}
                                    </span>
                                  )}
-                                 {architectureMath?.multiInstanceSizing && architectureMath.mgmtInstanceCount > 1 && (
+                                 {architectureMath?.drMinimumSizing ? (
+                                   <span className="ml-2 normal-case tracking-normal font-bold opacity-90">· DR-minimum recovery site</span>
+                                 ) : architectureMath?.multiInstanceSizing && architectureMath.mgmtInstanceCount > 1 ? (
                                    <span className="ml-2 normal-case tracking-normal font-bold opacity-90">
                                      · ×{architectureMath.mgmtInstanceCount} VCF instances{hldDrFleetPair ? ' (Fleet DR)' : ''}
                                    </span>
-                                 )}
+                                 ) : null}
                               </h4>
                               <div className="flex gap-8 mt-2">
                                  <div>
@@ -14506,7 +14676,7 @@ const architectureMath = useMemo(() => {
                                     </label>
                                   </div>
                                   <p className="text-[10px] text-violet-800 dark:text-violet-300 leading-relaxed">Recovery needs its own management-domain capacity (N-1). Automation is typically redeployed + restored on the recovery site; Ops can use Protection &amp; Recovery or Continuous Availability when latency allows.</p>
-                                  <button type="button" onClick={() => { setActiveModule('ARCHITECTURE'); setInfraSourceMode(hldDrSiteMode === 'GREENFIELD' ? 'GREENFIELD' : 'BROWNFIELD'); }} className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-200 hover:underline">Open Placement Engine to size DR instance →</button>
+                                  <button type="button" onClick={() => { setActiveModule('ARCHITECTURE'); setInfraSourceMode(hldDrSiteMode === 'GREENFIELD' ? 'GREENFIELD' : 'BROWNFIELD'); commitPlacementPayloadScope('DR_MINIMUM'); }} className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-200 hover:underline">Open Placement Engine · DR-only services →</button>
                                 </div>
                               )}
                            </div>
