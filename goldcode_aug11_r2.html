@@ -946,6 +946,7 @@
       networkingVpc: { label: 'VCF Networking / VPC design', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design.html', note: 'VPC, Edge, VNA consumption' },
       vksSupervisor: { label: 'vSphere Supervisor / VKS', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere-supervisor/8-0/using-tkg-service-with-vsphere-supervisor.html', note: 'Supervisor zones & guest clusters' },
       liveRecovery: { label: 'VMware Live Recovery / vSphere Replication', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/live-recovery.html', note: 'RPO, enhanced replication' },
+      fleetDr: { label: 'VCF Fleet Disaster Recovery', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/security-modernization/vcf-disaster-recovery.html', note: 'Multi-instance fleet DR — Protection & Recovery + backup/restore for Ops, Automation, MS' },
       cyberRecovery: { label: 'VMware Cyber Recovery', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1.html', note: 'IRE / clean-room recovery patterns' },
       vdefendSsp: { label: 'vDefend / Security Services Platform', href: 'https://techdocs.broadcom.com/us/en/vmware-cis/nsx/vmware-vsafety/9.html', note: 'SSP, IDS/MPS/NDR sensors' },
       vdefend1234Blog: { label: 'vDefend DFW 1-2-3-4 (Security blog)', href: 'https://blogs.vmware.com/security/2025/11/vdefend-dfw-1-2-3-4-vcf.html', note: 'Prescriptive Zero Trust journey overview' },
@@ -7672,6 +7673,10 @@ const VCFApp = () => {
       // Phase 5 Add-ons (Linked to Phase 4 Checkboxes dynamically below)
       const [hldIncAI, setHldIncAI] = useState(false);
       const [hldIncDR, setHldIncDR] = useState(false);
+      // Fleet DR: second VCF instance is the recovery site (Broadcom Fleet Disaster Recovery blueprint).
+      const [hldDrFleetPair, setHldDrFleetPair] = useState(false);
+      const [hldDrSiteMode, setHldDrSiteMode] = useState('GREENFIELD'); // GREENFIELD | EXISTING
+
       const [hldIncSEC, setHldIncSEC] = useState(false);
       // Avi / HCX / DSM scope is controlled via architectDecisionInputs.*Scope dropdowns in Phase 6
       useEffect(() => {
@@ -10835,6 +10840,8 @@ const architectureMath = useMemo(() => {
           { Key: 'archMode', Value: archMode },
           { Key: 'siteTopology', Value: hldSiteTopology },
           { Key: 'instanceStrategy', Value: hldInstanceStrategy },
+          { Key: 'fleetDrPair', Value: hldDrFleetPair ? 'YES' : 'NO' },
+          { Key: 'drSiteMode', Value: hldDrFleetPair ? hldDrSiteMode : 'N/A' },
           { Key: 'wldMapping', Value: fleetWldMapping },
           { Key: 'edgeStrategy', Value: hldEdgeStrategy },
           { Key: 'storageProtocol', Value: hldStorageProto },
@@ -13017,6 +13024,11 @@ const architectureMath = useMemo(() => {
                     actions={(
                       <>
                         <button type="button" onClick={() => { setActiveModule('FLEET'); setHldBuilderView('MGMT_PLANE'); }} className="text-xs font-bold px-3 py-2 rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900">Edit Management Plane →</button>
+                        {hldDrFleetPair && (
+                          <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded border border-violet-300 dark:border-violet-700 bg-violet-50 dark:bg-violet-950/40 text-violet-800 dark:text-violet-200">
+                            DR instance · {hldDrSiteMode === 'GREENFIELD' ? 'Greenfield' : 'Existing'}
+                          </span>
+                        )}
                         <select value={archSelectedCluster} onChange={(e) => setArchSelectedCluster(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-gray-900 dark:text-slate-100 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-2 cursor-pointer font-semibold shadow-sm outline-none max-w-xs">
                            <option value="ALL">All Clusters</option>
                            {uniqueClusters.map(c => <option key={c} value={c}>{c}</option>)}
@@ -13088,6 +13100,33 @@ const architectureMath = useMemo(() => {
                         )}
                      </div>
                      
+                     {hldDrFleetPair && (
+                       <div className="mt-4 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 p-4 space-y-3">
+                         <div className="flex flex-wrap items-start justify-between gap-3">
+                           <div>
+                             <div className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-300 flex items-center gap-1">DR / recovery VCF instance<SizerInfo text="Per the VCF Fleet Disaster Recovery blueprint: size a second VCF instance management domain at the recovery site. Ops and Ops for networks typically use Protection &amp; Recovery (or Continuous Availability when latency allows). VCF Automation is usually redeployed on the recovery site and restored from backup. Do not pre-deploy Identity Broker or Software Depot on the recovery VCFMS instance if those will be restored there." href={SIZER_DOCS.fleetDr.href} hrefLabel="Fleet DR blueprint" /></div>
+                             <p className="text-[11px] text-violet-900 dark:text-violet-200 mt-1 leading-relaxed">Design Builder marked multi-instance as a Fleet DR pair. Size this recovery management domain with the same N-1 / catalog rules as production — capacity is not shared across sites.</p>
+                           </div>
+                           <button type="button" onClick={() => { setActiveModule('FLEET'); setHldBuilderView('MGMT_PLANE'); }} className="text-[10px] font-bold text-violet-800 dark:text-violet-300 hover:underline shrink-0">Change on Design Builder →</button>
+                         </div>
+                         <div className="flex flex-wrap gap-4">
+                           <label className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-100 cursor-pointer">
+                             <input type="radio" name="pe-dr-site" className="h-4 w-4 accent-violet-600" checked={hldDrSiteMode === 'GREENFIELD'} onChange={() => { setHldDrSiteMode('GREENFIELD'); setInfraSourceMode('GREENFIELD'); }} />
+                             Greenfield DR site
+                           </label>
+                           <label className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-100 cursor-pointer">
+                             <input type="radio" name="pe-dr-site" className="h-4 w-4 accent-violet-600" checked={hldDrSiteMode === 'EXISTING'} onChange={() => { setHldDrSiteMode('EXISTING'); setInfraSourceMode('BROWNFIELD'); }} />
+                             Existing recovery clusters
+                           </label>
+                         </div>
+                         <p className="text-[10px] text-violet-800 dark:text-violet-300 leading-relaxed">
+                           {hldDrSiteMode === 'GREENFIELD'
+                             ? 'Use greenfield host count / cores / RAM below for the recovery management domain. Prefer Full HA (4+ hosts) for production DR; External NFS/FC still allows 2–3 when Simple architecture is intentional.'
+                             : 'Use brownfield cluster candidates below for the recovery site. Pick the recovery management-domain cluster on Design Builder, then validate N-1 headroom for the DR mgmt payload.'}
+                         </p>
+                       </div>
+                     )}
+
                      {archMode === 'GREENFIELD' ? (
                         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 pt-5 mt-4 border-t border-slate-100 dark:border-slate-800 animate-in fade-in slide-in-from-top-2">
                            <div className="flex flex-col">
@@ -13733,6 +13772,7 @@ const architectureMath = useMemo(() => {
             hldIncSEC && (architectDecisionInputs.hldSecurityServices === 'IDS_IPS' || architectDecisionInputs.hldSecurityServices === 'FULL') && { label: 'IDS/IPS', icon: <IconShield /> },
             architectDecisionInputs.hldProtectionModel === 'CYBER_VAULT' && { label: 'Cyber Recovery', icon: <IconRecovery /> },
             hldIncDR && { label: 'Site Protection & DR', icon: <IconRecovery /> },
+            hldDrFleetPair && { label: `Fleet DR · ${hldDrSiteMode === 'GREENFIELD' ? 'GF recovery' : 'Existing recovery'}`, icon: <IconRecovery /> },
             complianceScope.VKS && { label: 'Developer Ready / Kubernetes', icon: <IconKubernetes /> },
             derivedAvi && { label: 'Advanced Load Balancing', icon: <IconNetwork /> },
             hldIncDsm && { label: 'Data Services Manager', icon: <IconServer /> },
@@ -13944,7 +13984,7 @@ const architectureMath = useMemo(() => {
 
                   <SizerDocsPanel
                     title="Broadcom 9.1 docs & KBs"
-                    links={[SIZER_DOCS.vcfDesign, SIZER_DOCS.edgePatterns, SIZER_DOCS.techdocsHome, SIZER_DOCS.vcg]}
+                    links={[SIZER_DOCS.vcfDesign, SIZER_DOCS.fleetDr, SIZER_DOCS.edgePatterns, SIZER_DOCS.techdocsHome, SIZER_DOCS.vcg]}
                   />
 
                   {hldBuilderView === 'MGMT_PLANE' && (<>
@@ -13958,7 +13998,7 @@ const architectureMath = useMemo(() => {
                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Set management source, VCF instance count, vCenter / workload-domain mapping, site topology, and edge appliance placement. These drive the management-plane drawing. Control Grid holds decisions and Design IDs.</p>
                           </div>
                         </div>
-                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{hldInstanceStrategy === 'MULTI_INSTANCE' ? 'Multiple VCF instances' : 'One VCF instance'} · {fleetWldMapping.replaceAll('_', ' ')}</span>
+                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{hldInstanceStrategy === 'MULTI_INSTANCE' ? (hldDrFleetPair ? 'Multi-instance · Fleet DR' : 'Multiple VCF instances') : 'One VCF instance'} · {fleetWldMapping.replaceAll('_', ' ')}</span>
                      </summary>
                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-5">
                         <div>
@@ -13983,11 +14023,48 @@ const architectureMath = useMemo(() => {
                         )}
                         <div>
                            <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">VCF instance topology<SizerInfo text="Each VCF instance has one management domain and may contain multiple workload domains. Match Broadcom design-library topology choices." href={SIZER_DOCS.vcfDesign.href} hrefLabel="VCF 9.1 design library" /></label>
-                           <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 outline-none" value={hldInstanceStrategy} onChange={(e) => { const value = e.target.value; setHldInstanceStrategy(value); if (value === 'MULTI_INSTANCE' && fleetMode === 'GREENFIELD') setGfInstanceCount(current => Math.max(2, current)); if (value === 'SINGLE_INSTANCE') { setArchitectDecisionInput('hldFleetBoundary', 'SINGLE_FLEET'); setMultiInstanceClusters([]); } }}>
+                           <select className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 outline-none" value={hldInstanceStrategy} onChange={(e) => { const value = e.target.value; setHldInstanceStrategy(value); if (value === 'MULTI_INSTANCE') { if (fleetMode === 'GREENFIELD') setGfInstanceCount(current => Math.max(2, current)); setHldDrFleetPair(true); setHldIncDR(true); } if (value === 'SINGLE_INSTANCE') { setArchitectDecisionInput('hldFleetBoundary', 'SINGLE_FLEET'); setMultiInstanceClusters([]); setHldDrFleetPair(false); } }}>
                               <option value="SINGLE_INSTANCE">One VCF instance</option><option value="MULTI_INSTANCE">Multiple VCF instances</option>
                            </select>
                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Each VCF instance has one management domain and may contain multiple workload domains.</p>
                         </div>
+                        {hldInstanceStrategy === 'MULTI_INSTANCE' && (
+                           <div className="rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/40 p-3 xl:col-span-2 space-y-3">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div>
+                                  <label className="text-[10px] font-black text-violet-800 dark:text-violet-300 uppercase tracking-widest flex items-center gap-1">Fleet DR role<SizerInfo text="VCF Fleet Disaster Recovery uses a second VCF instance (typically outside metro) to recover fleet components after instance or site failure. Ops / Ops for networks use Protection &amp; Recovery; Automation and many management-services components restore onto the recovery instance. Do not pre-deploy a second Identity Broker or Software Depot on the recovery VCFMS instance." href={SIZER_DOCS.fleetDr.href} hrefLabel="Fleet DR blueprint" /></label>
+                                  <p className="text-[10px] text-violet-900 dark:text-violet-200 mt-1 leading-relaxed">Selecting multiple instances turns on DR planning by default. Placement Engine then sizes the recovery site separately.</p>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-4">
+                                <label className="flex items-center gap-2 text-xs font-bold text-violet-900 dark:text-violet-100 cursor-pointer">
+                                  <input type="radio" name="hld-dr-role" className="h-4 w-4 accent-violet-600" checked={hldDrFleetPair} onChange={() => { setHldDrFleetPair(true); setHldIncDR(true); }} />
+                                  Second instance is DR / recovery site
+                                </label>
+                                <label className="flex items-center gap-2 text-xs font-bold text-violet-900 dark:text-violet-100 cursor-pointer">
+                                  <input type="radio" name="hld-dr-role" className="h-4 w-4 accent-violet-600" checked={!hldDrFleetPair} onChange={() => setHldDrFleetPair(false)} />
+                                  Independent production instances (not Fleet DR)
+                                </label>
+                              </div>
+                              {hldDrFleetPair && (
+                                <div className="pt-2 border-t border-violet-200 dark:border-violet-800 space-y-2">
+                                  <div className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-300">Recovery-site infrastructure</div>
+                                  <div className="flex flex-wrap gap-4">
+                                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+                                      <input type="radio" name="hld-dr-site" className="h-4 w-4 accent-violet-600" checked={hldDrSiteMode === 'GREENFIELD'} onChange={() => setHldDrSiteMode('GREENFIELD')} />
+                                      Greenfield — size new hosts for the DR management domain
+                                    </label>
+                                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+                                      <input type="radio" name="hld-dr-site" className="h-4 w-4 accent-violet-600" checked={hldDrSiteMode === 'EXISTING'} onChange={() => setHldDrSiteMode('EXISTING')} />
+                                      Existing — add DR mgmt onto recovery-site clusters (RVTools)
+                                    </label>
+                                  </div>
+                                  <p className="text-[10px] text-violet-800 dark:text-violet-300 leading-relaxed">Recovery needs its own management-domain capacity (N-1). Automation is typically redeployed + restored on the recovery site; Ops can use Protection &amp; Recovery or Continuous Availability when latency allows.</p>
+                                  <button type="button" onClick={() => { setActiveModule('ARCHITECTURE'); setInfraSourceMode(hldDrSiteMode === 'GREENFIELD' ? 'GREENFIELD' : 'BROWNFIELD'); }} className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-200 hover:underline">Open Placement Engine to size DR instance →</button>
+                                </div>
+                              )}
+                           </div>
+                        )}
                         {hldInstanceStrategy === 'MULTI_INSTANCE' && fleetMode === 'BROWNFIELD' && (
                            <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 p-3 xl:col-span-2">
                               <div className="text-[10px] font-black text-indigo-800 dark:text-indigo-300 mb-2">Additional management-domain clusters</div>
@@ -14775,6 +14852,27 @@ const architectureMath = useMemo(() => {
           return Number.isFinite(n) && n > 0 ? n : 0;
         };
         const fmtUsd = (n) => (n > 0 ? n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }) : '—');
+        const MoneyField = ({ label, info, value, onChange, disabled = false, placeholder = '0', hint = null }) => (
+          <div className="flex flex-col gap-1 min-h-[6.25rem]">
+            <div className="flex items-start gap-1 min-h-[2.75rem]">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 leading-snug">{label}</span>
+              {info ? <SizerInfo text={info} /> : null}
+            </div>
+            <div className={`relative ${disabled ? 'opacity-50' : ''}`}>
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">$</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                disabled={disabled}
+                placeholder={placeholder}
+                className="w-full border border-slate-300 dark:border-slate-600 rounded pl-6 pr-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 disabled:cursor-not-allowed"
+                value={value}
+                onChange={(e) => onChange(e.target.value.replace(/[^0-9.,]/g, ''))}
+              />
+            </div>
+            <div className="text-[9px] text-slate-500 dark:text-slate-400 min-h-[1rem] leading-snug">{hint || '\u00a0'}</div>
+          </div>
+        );
         const sheetRows = vcgData.valueOfVcf || vcgData['Value of VCF'] || vcgData.tcoAverages || [];
         const avgIndex = {};
         sheetRows.forEach((row) => {
@@ -14982,10 +15080,22 @@ const architectureMath = useMemo(() => {
             <div className="flex-1 p-8 overflow-y-auto custom-scrollbar sizer-results-rail space-y-6">
               <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
                 <div className="ui-card p-4"><div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Estate (RVTools)</div><div className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{vms.toLocaleString()} <span className="text-sm font-bold text-slate-500">VMs</span></div><div className="text-[10px] text-slate-500 dark:text-slate-400">{hosts.toLocaleString()} hosts · {poweredOn.toLocaleString()} on · {totalTb > 0 ? `${totalTb.toFixed(1)} TiB` : `${totalVcfCores.toLocaleString()} cores`}{gbPerVm > 0 ? ` · ${Math.round(gbPerVm)} GB/VM` : ''}{k8sGuests ? ` · ${k8sGuests} K8s` : ''}{hostsSaved ? ` · −${hostsSaved} hosts` : ''}</div></div>
-                <div className="ui-card p-4"><div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Horizon</div><div className="mt-2 flex gap-1">{[3,5,7].map(y => <button key={y} type="button" onClick={() => setValueHorizon(y)} className={`px-3 py-1.5 text-xs font-black rounded ${valueHorizon === y ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>{y} yr</button>)}</div><div className="mt-2 flex gap-1">{[{ id: 'PLANNING', label: 'Planning haircut' }, { id: 'VVM', label: 'VVM directional' }].map(opt => <button key={opt.id} type="button" onClick={() => setValuePctSource(opt.id)} className={`px-2 py-1 text-[10px] font-black rounded ${valuePctSource === opt.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>{opt.label}</button>)}</div></div>
-                <div className="ui-card p-4 border-emerald-200 dark:border-emerald-800"><div className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">Labor + business</div><div className="text-2xl font-black text-emerald-700 dark:text-emerald-300 mt-1">{fmtUsd((valueLaborOn ? laborAnnual : 0) + (valueBizOn ? bizAnnual : 0))}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">Annual operating value · {fmtUsd(laborHorizon + bizHorizon)} over {valueHorizon} yr · {totalFte.toFixed(1)} FTE model</div></div>
-                <div className="ui-card p-4 border-blue-200 dark:border-blue-800"><div className="text-[10px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-300">Competitor takeout</div><div className="text-2xl font-black text-blue-700 dark:text-blue-300 mt-1">{fmtUsd(impliedAnnualTotal)}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">Annual · {fmtUsd(impliedHorizonTotal)} over {valueHorizon} yr{spendCount ? ` · ${spendCount} spend line${spendCount === 1 ? '' : 's'}` : ' · enter spend or Use RVTools est'}</div></div>
-                <div className="ui-card p-4"><div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Averages source</div><div className="text-[10px] text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">{usingSheet ? `${sheetRows.length} rows from the Value of VCF sheet (vendor overrides industry).` : 'Built-in industry averages. Add a Value of VCF tab in the baseline Google Sheet to tune per vendor.'} Blended takeout {blended}% across {activeLanes.length} lanes.</div></div>
+                <div className="ui-card p-4">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1">Horizon<SizerInfo text="Planning haircut: conservative directional takeout % from industry / sheet averages — use for customer conversations before invoices. VVM directional: MAVERIK-shaped category takeouts (e.g. compute ~32%, storage ~65%, network ~41% at 5 yr) plus leave-cost units ($38,657/node, $920/VM off vSphere). Haircut is safer for early planning; VVM is the higher directional story — never a quote." /></div>
+                  <div className="mt-2 flex gap-1">{[3,5,7].map(y => <button key={y} type="button" onClick={() => setValueHorizon(y)} className={`px-3 py-1.5 text-xs font-black rounded ${valueHorizon === y ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>{y} yr</button>)}</div>
+                  <div className="mt-2 flex gap-1">{[{ id: 'PLANNING', label: 'Planning haircut' }, { id: 'VVM', label: 'VVM directional' }].map(opt => <button key={opt.id} type="button" onClick={() => setValuePctSource(opt.id)} className={`px-2 py-1 text-[10px] font-black rounded ${valuePctSource === opt.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>{opt.label}</button>)}</div>
+                </div>
+                <div className="ui-card p-4 border-emerald-200 dark:border-emerald-800">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300 flex items-center gap-1">Labor + business<SizerInfo text="VCF operating value — not competitor takeout. Labor: VVM-shaped FTE model on this RVTools estate (server / storage / network admins × ~$149k burdened × productivity). Business: avoided internal IT downtime hours when Live Recovery / DR is in the design. Toggle Include labor / Include downtime below." /></div>
+                  <div className="text-2xl font-black text-emerald-700 dark:text-emerald-300 mt-1">{fmtUsd((valueLaborOn ? laborAnnual : 0) + (valueBizOn ? bizAnnual : 0))}</div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400">Annual operating value · {fmtUsd(laborHorizon + bizHorizon)} over {valueHorizon} yr · {totalFte.toFixed(1)} FTE model</div>
+                </div>
+                <div className="ui-card p-4 border-blue-200 dark:border-blue-800">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-300 flex items-center gap-1">Competitor takeout<SizerInfo text="Sum of each checked lane: annual competitor spend × directional % for the selected horizon. Lanes are technology categories (hypervisor, storage, networking, firewall, LB, containers, backup, operations, automation). This is invoice displacement — separate from avoided leave-vSphere cost and from labor/business." /></div>
+                  <div className="text-2xl font-black text-blue-700 dark:text-blue-300 mt-1">{fmtUsd(impliedAnnualTotal)}</div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400">Annual · {fmtUsd(impliedHorizonTotal)} over {valueHorizon} yr{spendCount ? ` · ${spendCount} spend line${spendCount === 1 ? '' : 's'}` : ' · enter spend or Use RVTools est'}</div>
+                </div>
+                <div className="ui-card p-4"><div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1">Averages source<SizerInfo text="A lane is one competitor category row (storage, firewall, etc.). Blended takeout averages the directional % across checked lanes that have spend." /></div><div className="text-[10px] text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">{usingSheet ? `${sheetRows.length} rows from the Value of VCF sheet (vendor overrides industry).` : 'Built-in industry averages. Add a Value of VCF tab in the baseline Google Sheet to tune per vendor.'} Blended takeout {blended}% across {activeLanes.length} lanes.</div></div>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
@@ -15028,19 +15138,6 @@ const architectureMath = useMemo(() => {
                 </div>
               </div>
 
-              {laneOn('storage') && (
-                <div className="ui-card p-4 flex flex-wrap gap-4 items-start">
-                  <div>
-                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Storage play</div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <button type="button" onClick={() => { setValueStoragePlay('HCI_DEFEND'); if (valueCompetitors.storage !== 'NUTANIX') setComp('storage', 'NUTANIX'); }} className={`px-3 py-1.5 text-xs font-black rounded ${valueStoragePlay === 'HCI_DEFEND' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>Defend vs Nutanix HCI</button>
-                      <button type="button" onClick={() => { setValueStoragePlay('DISAGG_REPLACE'); if (valueCompetitors.storage === 'NUTANIX') setComp('storage', 'NIMBLE'); }} className={`px-3 py-1.5 text-xs font-black rounded ${valueStoragePlay === 'DISAGG_REPLACE' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>Replace Nimble / NetApp with vSAN disaggregated</button>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed max-w-3xl">{storageStory}</p>
-                </div>
-              )}
-
               <div className="ui-card p-4 space-y-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -15052,19 +15149,63 @@ const architectureMath = useMemo(() => {
                     Include avoided leave-vSphere cost
                   </label>
                 </div>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">VCF annual subscription<div><input type="text" inputMode="decimal" placeholder="$0" className="mt-1 w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100" value={valueVcfAnnual} onChange={(e) => setValueVcfAnnual(e.target.value)} /></div></label>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Current VMware annual<div><input type="text" inputMode="decimal" placeholder="$0" className="mt-1 w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100" value={valueCurrentVmware} onChange={(e) => setValueCurrentVmware(e.target.value)} /></div></label>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">New-node + support override{anyNewNodes && valueCountSwitchCost && !parseSpend(valueSwitchServers) && switchServersEst > 0 && <span className="normal-case font-medium"> · est {fmtUsd(switchServersEst)}</span>}<div><input type="text" inputMode="decimal" disabled={!valueCountSwitchCost || !anyNewNodes} placeholder={anyNewNodes && switchServersEst > 0 ? String(Math.round(switchServersEst)) : 'n/a'} className="mt-1 w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 disabled:opacity-50" value={valueSwitchServers} onChange={(e) => setValueSwitchServers(e.target.value)} /></div></label>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">VM migrate override{maxMigPerVm > 0 && valueCountSwitchCost && !parseSpend(valueSwitchMigration) && switchMigEst > 0 && <span className="normal-case font-medium"> · ${maxMigPerVm}/VM · est {fmtUsd(switchMigEst)}</span>}<div><input type="text" inputMode="decimal" disabled={!valueCountSwitchCost || maxMigPerVm <= 0} placeholder={maxMigPerVm > 0 && switchMigEst > 0 ? String(Math.round(switchMigEst)) : 'n/a'} className="mt-1 w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 disabled:opacity-50" value={valueSwitchMigration} onChange={(e) => setValueSwitchMigration(e.target.value)} /></div></label>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 items-stretch">
+                  <MoneyField
+                    label="VCF annual subscription"
+                    info="Customer’s planned VCF subscription spend per year. Net-new hurdle = (this − current VMware annual) × horizon."
+                    value={valueVcfAnnual}
+                    onChange={setValueVcfAnnual}
+                    placeholder="0"
+                  />
+                  <MoneyField
+                    label="Current VMware annual"
+                    info="Existing VMware software spend that VCF replaces or absorbs. Subtracted from VCF subscription when computing the net-new hurdle."
+                    value={valueCurrentVmware}
+                    onChange={setValueCurrentVmware}
+                    placeholder="0"
+                  />
+                  <MoneyField
+                    label="New-node + support override"
+                    info={`When a leave-vSphere lane is checked (e.g. AHV or Nutanix HCI), avoided hardware cost defaults to RVTools host count × $38,657/node × (1 + 15% support × horizon) from VVM/PCMO units. Override with a customer quote. Est: ${switchServersEst > 0 ? fmtUsd(switchServersEst) : 'n/a'}.`}
+                    value={valueSwitchServers}
+                    onChange={setValueSwitchServers}
+                    disabled={!valueCountSwitchCost || !anyNewNodes}
+                    placeholder={anyNewNodes && switchServersEst > 0 ? String(Math.round(switchServersEst)) : 'n/a'}
+                    hint={anyNewNodes && valueCountSwitchCost && !parseSpend(valueSwitchServers) && switchServersEst > 0 ? `Using est ${fmtUsd(switchServersEst)}` : (anyNewNodes ? 'Hosts × $38,657 × support' : 'No leave+new-nodes vendor')}
+                  />
+                  <MoneyField
+                    label="VM migrate override"
+                    info={`Avoided migration cost for leaving vSphere: powered-on VMs × max $/VM from checked leave lanes ($920 off vSphere, $1,672 OpenShift Virt). Counted once across lanes. Est: ${switchMigEst > 0 ? fmtUsd(switchMigEst) : 'n/a'}.`}
+                    value={valueSwitchMigration}
+                    onChange={setValueSwitchMigration}
+                    disabled={!valueCountSwitchCost || maxMigPerVm <= 0}
+                    placeholder={maxMigPerVm > 0 && switchMigEst > 0 ? String(Math.round(switchMigEst)) : 'n/a'}
+                    hint={maxMigPerVm > 0 && valueCountSwitchCost && !parseSpend(valueSwitchMigration) && switchMigEst > 0 ? `$${maxMigPerVm}/VM · est ${fmtUsd(switchMigEst)}` : (maxMigPerVm > 0 ? `$${maxMigPerVm}/VM unit` : 'No migrate lane')}
+                  />
                 </div>
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
-                  <div><div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Hurdle (net-new VCF)</div><div className="text-lg font-black text-slate-900 dark:text-slate-100">{fmtUsd(netNewVcfHorizon)}</div><div className="text-[10px] text-slate-500">{valueHorizon}-yr · sub − current VMware</div></div>
-                  <div><div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Takeout from lanes</div><div className="text-lg font-black text-blue-700 dark:text-blue-300">{fmtUsd(impliedHorizonTotal)}</div><div className="text-[10px] text-slate-500">Each vendor: spend × directional %</div></div>
-                  <div><div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Avoided leave (once)</div><div className="text-lg font-black text-blue-700 dark:text-blue-300">{fmtUsd(switchTotal)}</div><div className="text-[10px] text-slate-500">{!valueCountSwitchCost ? 'Unchecked' : leaveLanes.length ? `${anyNewNodes ? 'New nodes + ' : ''}${maxMigPerVm ? `$${maxMigPerVm}/VM` : 'no migrate'} · not double-counted` : 'No leave-vSphere vendor checked'}</div></div>
-                  <div><div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Labor + downtime</div><div className="text-lg font-black text-emerald-700 dark:text-emerald-300">{fmtUsd(laborHorizon + bizHorizon)}</div><div className="text-[10px] text-slate-500">{valueHorizon}-yr · {valueLaborOn ? 'labor on' : 'labor off'} · {valueBizOn ? 'downtime on' : 'downtime off'}</div></div>
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1">Hurdle (net-new VCF)<SizerInfo text="(VCF annual − current VMware annual) × horizon. The amount competitive takeout + avoided leave + labor/business must cover for directional ROI to go positive." /></div>
+                    <div className="text-lg font-black text-slate-900 dark:text-slate-100">{fmtUsd(netNewVcfHorizon)}</div>
+                    <div className="text-[10px] text-slate-500">{valueHorizon}-yr · sub − current VMware</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1">Takeout from lanes<SizerInfo text="Sum across checked technology lanes: each lane’s annual competitor spend × that lane’s directional %. Example: storage invoice × 24%. This is software/stack displacement only — it does not include buying new HCI nodes." /></div>
+                    <div className="text-lg font-black text-blue-700 dark:text-blue-300">{fmtUsd(impliedHorizonTotal)}</div>
+                    <div className="text-[10px] text-slate-500">Each vendor: spend × directional %</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1">Avoided leave (once)<SizerInfo text="One-time cost of leaving vSphere for a competing stack: new nodes + support (when the vendor requires rip/replace hardware) plus VM migration $/VM. Counted once for the estate so Hyper-V + Nutanix does not double-count. Separate from lane takeout %." /></div>
+                    <div className="text-lg font-black text-blue-700 dark:text-blue-300">{fmtUsd(switchTotal)}</div>
+                    <div className="text-[10px] text-slate-500">{!valueCountSwitchCost ? 'Unchecked' : leaveLanes.length ? `${anyNewNodes ? 'New nodes + ' : ''}${maxMigPerVm ? `$${maxMigPerVm}/VM` : 'no migrate'} · not double-counted` : 'No leave-vSphere vendor checked'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1">Labor + downtime<SizerInfo text="VCF operating-model value over the horizon: FTE productivity on this RVTools estate plus avoided internal IT downtime when DR/Live Recovery is in design. Not a competitor invoice line." /></div>
+                    <div className="text-lg font-black text-emerald-700 dark:text-emerald-300">{fmtUsd(laborHorizon + bizHorizon)}</div>
+                    <div className="text-[10px] text-slate-500">{valueHorizon}-yr · {valueLaborOn ? 'labor on' : 'labor off'} · {valueBizOn ? 'downtime on' : 'downtime off'}</div>
+                  </div>
                   <div className={roiReady && vcfAnnual > 0 ? (roiGap <= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300') : ''}>
-                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">To positive ROI</div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1">To positive ROI<SizerInfo text="Hurdle − (takeout from lanes + avoided leave + labor/downtime). Covered means sources exceed the net-new VCF subscription gap." /></div>
                     <div className="text-lg font-black">{vcfAnnual > 0 ? (roiGap <= 0 ? 'Covered' : fmtUsd(roiGap)) : 'Enter VCF $'}</div>
                     <div className="text-[10px] text-slate-500">{vcfAnnual > 0 ? (roiGap <= 0 ? `Sources exceed hurdle by ${fmtUsd(Math.abs(roiGap))}` : 'Need more invoices, labor, or leave-cost') : 'Then we net sources vs subscription'}</div>
                   </div>
@@ -15077,7 +15218,7 @@ const architectureMath = useMemo(() => {
               <div className="ui-card p-4 space-y-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">VCF operating value — labor & business impact</div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300 flex items-center gap-1">VCF operating value — labor & business impact<SizerInfo text="Labor: FTE productivity from this RVTools estate using VVM ratios. Business: avoided internal downtime hours (higher when Live Recovery / Fleet DR is in the HLD). These are VCF operating benefits — not competitor takeout lanes." /></div>
                     <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 max-w-3xl leading-relaxed">This is the VCF close. Ratios are VVM-shaped (1 server admin / 1,000 VMs, 0.7 storage admin / 300 TiB, 1 network admin / 1,000 VMs, ~$149k fully burdened) applied to <em>this</em> RVTools estate. Productivity is 48–50% with Automation / vSAN in the HLD, haircut if those are off. Downtime is internal IT only — we do not invent customer revenue.</p>
                   </div>
                   <div className="flex flex-wrap gap-4">
@@ -15174,8 +15315,11 @@ const architectureMath = useMemo(() => {
                           ) : '—'}
                         </td>
                         <td className="p-3 align-top">
-                          <input type="text" inputMode="decimal" disabled={!lane.on} placeholder={lane.estateEst > 0 ? `est ${Math.round(lane.estateEst)}` : '$0'} className="w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 disabled:opacity-50" value={valueLaneSpend[lane.id]} onChange={(e) => setSpend(lane.id, e.target.value)} aria-label={`Annual spend on ${lane.title} competitor`} />
-                          {lane.on && lane.estateEst > 0 && !lane.spend && <div className="text-[9px] text-slate-500 mt-1">RVTools × VVM $2/GB · 15% annual</div>}
+                          <div className={`relative ${!lane.on ? 'opacity-50' : ''}`}>
+                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">$</span>
+                            <input type="text" inputMode="decimal" disabled={!lane.on} placeholder={lane.estateEst > 0 ? String(Math.round(lane.estateEst)) : '0'} className="w-full border border-slate-300 dark:border-slate-600 rounded pl-5 pr-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 disabled:opacity-50" value={valueLaneSpend[lane.id]} onChange={(e) => setSpend(lane.id, e.target.value.replace(/[^0-9.,]/g, ''))} aria-label={`Annual spend on ${lane.title} competitor`} />
+                          </div>
+                          {lane.on && lane.estateEst > 0 && !lane.spend && <div className="text-[9px] text-slate-500 mt-1">RVTools × VVM $2/GB · 15% annual · est {fmtUsd(lane.estateEst)}</div>}
                         </td>
                         <td className={`p-3 text-right font-black align-top ${lane.on && valueHorizon === 3 ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{lane.on ? `${lane.pct[3]}%` : '—'}</td>
                         <td className={`p-3 text-right font-black align-top ${lane.on && valueHorizon === 5 ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{lane.on ? `${lane.pct[5]}%` : '—'}</td>
