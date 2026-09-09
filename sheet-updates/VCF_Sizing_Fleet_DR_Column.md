@@ -35,4 +35,5 @@ Avi, SSP (mgmt + WLD), WLD vCenter / NSX, Real-time Metrics, Licensing Hub.
 ## App behavior notes
 - DR-only **ignores** Primary Required when deciding checkboxes — only Fleet DR / heuristics.
 - Red callout = Primary Required ∪ pre–DR selections ∪ DR-min sized rows (one site) — always ≥ blue DR-minimum target.
+- **Fleet DR pair never multiplies fit validation ×2.** Primary and recovery are sized as separate single-site payloads. Only *independent* multi-instance (not Fleet DR) uses ×N.
 - Sheet Location typo `Serices` is normalized to `Services`; SSP mgmt and WLD are separate optional groups.

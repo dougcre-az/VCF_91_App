@@ -7719,8 +7719,8 @@ const VCFApp = () => {
       // Fleet DR: second VCF instance is the recovery site (Broadcom Fleet Disaster Recovery blueprint).
       const [hldDrFleetPair, setHldDrFleetPair] = useState(false);
       const [hldDrSiteMode, setHldDrSiteMode] = useState('GREENFIELD'); // GREENFIELD | EXISTING
-      // Placement Engine: FULL_ESTATE = all selected services (× instances when Fleet DR);
-      // DR_MINIMUM = recovery-site only — auto-select Fleet DR blueprint targets, exclude restore-only pre-deploys.
+      // Placement Engine: FULL_ESTATE = selected services for the site under design (one site).
+      // DR_MINIMUM = recovery-site Fleet DR minimums (one site). Fleet DR pair never ×2's fit validation.
       const [placementPayloadScope, setPlacementPayloadScope] = useState('FULL_ESTATE'); // FULL_ESTATE | DR_MINIMUM
       const preDrMinimumSelectionsRef = useRef(null);
       const preDrMinimumWlCountRef = useRef(null);
@@ -10065,26 +10065,30 @@ const architectureMath = useMemo(() => {
            }
          }
          
-         // When Fleet DR / multi-instance / multi-fleet: size every management-domain (and fleet) catalog
-         // row for each VCF instance so Placement shows enough CPU/RAM/storage for both sites/fleets.
-         // DR_MINIMUM is recovery-site only (single instance multipliers) — full-estate ceiling is computed separately.
+         // Fit validation sizes ONE site's payload.
+         // - Fleet DR pair: never × instance count (primary and recovery are sized separately;
+         //   use DR only for recovery minimums). Doubling here was double-counting DR.
+         // - Independent multi-instance (not Fleet DR): × instance count for total production capacity.
+         // - Multiple fleets: × fleet count for fleet-scoped rows only (Ops / Automation authority).
          const gfInstances = Math.max(2, parseInt(gfInstanceCount, 10) || 2);
          const bfInstances = Math.max(2, 1 + (multiInstanceClusters?.length || 0));
          const drMinimumSizing = placementPayloadScope === 'DR_MINIMUM' && hldDrFleetPair;
-         const multiInstanceSizing = !drMinimumSizing && (hldInstanceStrategy === 'MULTI_INSTANCE' || hldDrFleetPair);
+         const multiInstanceSizing = !hldDrFleetPair
+           && hldInstanceStrategy === 'MULTI_INSTANCE'
+           && !drMinimumSizing;
          const mgmtInstanceCount = multiInstanceSizing
            ? (archMode === 'GREENFIELD' ? gfInstances : bfInstances)
            : 1;
          const fleetPayloadCount = architectDecisionInputs?.hldFleetBoundary === 'MULTIPLE_FLEETS'
            ? Math.max(2, parseInt(fleetCount, 10) || 2)
-           : (multiInstanceSizing && hldDrFleetPair ? mgmtInstanceCount : 1);
+           : 1;
          
          const resolveEnabledPayload_ = (selections, opts = {}) => {
            const useMulti = !!opts.multiInstance;
            const mgmtN = useMulti ? (archMode === 'GREENFIELD' ? gfInstances : bfInstances) : 1;
            const fleetN = architectDecisionInputs?.hldFleetBoundary === 'MULTIPLE_FLEETS'
              ? Math.max(2, parseInt(fleetCount, 10) || 2)
-             : (useMulti && hldDrFleetPair ? mgmtN : 1);
+             : 1;
            const wldN = opts.wlCount != null ? Math.max(0, parseInt(opts.wlCount, 10) || 0) : Math.max(0, parseInt(wlDomainCount, 10) || 0);
            let vcpu = 0; let ram = 0; let storage = 0;
            const components = [];
@@ -13760,7 +13764,7 @@ const architectureMath = useMemo(() => {
                          <div className="flex flex-wrap items-start justify-between gap-3">
                            <div>
                              <div className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-300 flex items-center gap-1">DR / recovery VCF instance<SizerInfo text="Per the VCF Fleet Disaster Recovery blueprint: size a second VCF instance management domain at the recovery site. Ops and Ops for networks typically use Protection &amp; Recovery (or Continuous Availability when latency allows). VCF Automation is usually redeployed on the recovery site and restored from backup. Do not pre-deploy Identity Broker or Software Depot on the recovery VCFMS instance if those will be restored there." href={SIZER_DOCS.fleetDr.href} hrefLabel="Fleet DR blueprint" /></div>
-                             <p className="text-[11px] text-violet-900 dark:text-violet-200 mt-1 leading-relaxed">Design Builder marked multi-instance as a Fleet DR pair. Use <strong>DR only</strong> under Services in scope to auto-select recovery-site minimums; Fit validation then sizes this site alone (not × both instances).</p>
+                             <p className="text-[11px] text-violet-900 dark:text-violet-200 mt-1 leading-relaxed">Fleet DR pair: Fit validation always sizes <strong>one site</strong> (never ×2). Use <strong>DR only</strong> for recovery-site minimums; Full estate is the selected primary/recovery catalog once.</p>
                            </div>
                            <button type="button" onClick={() => { setActiveModule('FLEET'); setHldBuilderView('MGMT_PLANE'); }} className="text-[10px] font-bold text-violet-800 dark:text-violet-300 hover:underline shrink-0">Change on Design Builder →</button>
                          </div>
@@ -13946,7 +13950,7 @@ const architectureMath = useMemo(() => {
                                    Placement payload scope
                                    <SizerInfo text="DR only uses the Fleet DR sheet column (Yes / Protect / Redeploy / Restore / No) — not Primary Required. Size at recovery: Ops + Ops for networks (P&amp;R), Automation (redeploy), management-domain foundation (vCenter, NSX Managers/Edges/VNA, SDDC Manager, License, Cloud Proxy, MS runtime, Protection Blueprint). Restore-only stays off: Identity Broker, Depot, Log Management, Salt, Fleet LCM. Workload-domain and Avi/SSP stay out of DR-minimum." href={SIZER_DOCS.fleetDr.href} hrefLabel="Fleet DR blueprint" />
                                  </div>
-                                 <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed"><strong>Required</strong> = primary VCF instance. <strong>Fleet DR</strong> = recovery-site minimum. Fit validation sizes the recovery site alone; the red callout is the primary-estate ceiling (always ≥ DR-min).</p>
+                                 <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed"><strong>Required</strong> = primary instance. <strong>Fleet DR</strong> = recovery minimum. Fit validation is always <strong>one site</strong> — Fleet DR does not multiply catalog rows ×2.</p>
                                </div>
                              </div>
                              <div className="flex flex-wrap gap-4 mt-3">
@@ -14066,10 +14070,12 @@ const architectureMath = useMemo(() => {
                                    </span>
                                  )}
                                  {architectureMath?.drMinimumSizing ? (
-                                   <span className="ml-2 normal-case tracking-normal font-bold opacity-90">· DR-minimum recovery site</span>
+                                   <span className="ml-2 normal-case tracking-normal font-bold opacity-90">· DR-minimum recovery site (single site)</span>
+                                 ) : hldDrFleetPair ? (
+                                   <span className="ml-2 normal-case tracking-normal font-bold opacity-90">· Fleet DR · single site (not ×2)</span>
                                  ) : architectureMath?.multiInstanceSizing && architectureMath.mgmtInstanceCount > 1 ? (
                                    <span className="ml-2 normal-case tracking-normal font-bold opacity-90">
-                                     · ×{architectureMath.mgmtInstanceCount} VCF instances{hldDrFleetPair ? ' (Fleet DR)' : ''}
+                                     · ×{architectureMath.mgmtInstanceCount} independent VCF instances
                                    </span>
                                  ) : null}
                               </h4>
