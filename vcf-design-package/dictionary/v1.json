@@ -1,0 +1,4234 @@
+{
+  "schema": "vcf-design-package-dictionary/v1",
+  "packageSchema": "vcf-design-package/v1",
+  "generatedAt": "2026-09-09T14:36:16.323Z",
+  "producerTool": "goldcode_aug11_r2 / VCF_91_App",
+  "notes": [
+    "Enums are producer-canonical (app values). Google Sheet Design Decisions Options should be patched to match (see sheet-updates/).",
+    "UNRESOLVED and NOT_APPLICABLE are distinct.",
+    "Trigger aliases: availabilityModel (SIMPLE|HA), productionSizing (bool), opsExternalLB (bool)."
+  ],
+  "decisions": {
+    "DEC-ARCH-001": {
+      "contextKey": "archMode",
+      "domain": "FLEET",
+      "sheetDomain": "ARCHITECTURE",
+      "priority": "P0",
+      "title": "Deployment pathway",
+      "discoveryQuestion": "Is this a new deployment, an import/conversion, or an in-place upgrade?",
+      "default": "BROWNFIELD",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1.html",
+      "enum": {
+        "GREENFIELD": {
+          "label": "Greenfield",
+          "shortLabel": "GF"
+        },
+        "BROWNFIELD": {
+          "label": "Brownfield / existing estate",
+          "shortLabel": "BF"
+        },
+        "IMPORT": {
+          "label": "Import existing SDDC",
+          "shortLabel": "Import"
+        },
+        "CONVERT": {
+          "label": "Convert to VCF",
+          "shortLabel": "Convert"
+        },
+        "UPGRADE": {
+          "label": "Upgrade existing VCF path",
+          "shortLabel": "Upgrade"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-ARCH-002": {
+      "contextKey": "hldArchitectureModel",
+      "domain": "FLEET",
+      "sheetDomain": "ARCHITECTURE",
+      "priority": "P0",
+      "title": "Platform architecture model",
+      "discoveryQuestion": "Will management and workloads use consolidated, standard, or disaggregated infrastructure?",
+      "default": "STANDARD",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1.html",
+      "enum": {
+        "CONSOLIDATED": {
+          "label": "CONSOLIDATED",
+          "shortLabel": "CONSOLIDATED"
+        },
+        "STANDARD": {
+          "label": "STANDARD",
+          "shortLabel": "STANDARD"
+        },
+        "DISAGGREGATED": {
+          "label": "DISAGGREGATED",
+          "shortLabel": "DISAGGREGATED"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-FLEET-001": {
+      "contextKey": "hldFleetBoundary",
+      "domain": "FLEET",
+      "sheetDomain": "FLEET",
+      "priority": "P0",
+      "title": "Fleet boundary",
+      "discoveryQuestion": "Which VCF instances share one fleet-level operations and governance boundary?",
+      "default": "SINGLE_FLEET",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/05/scale-simplify-and-secure-your-private-cloud-operations-with-vcf-9-1/",
+      "enum": {
+        "SINGLE_FLEET": {
+          "label": "SINGLE FLEET",
+          "shortLabel": "SINGLE FLEET"
+        },
+        "MULTIPLE_FLEETS": {
+          "label": "MULTIPLE FLEETS",
+          "shortLabel": "MULTIPLE FLEETS"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-FLEET-002": {
+      "contextKey": "hldInstanceStrategy",
+      "domain": "FLEET",
+      "sheetDomain": "FLEET",
+      "priority": "P0",
+      "title": "VCF instance strategy",
+      "discoveryQuestion": "Will the design use one VCF instance or multiple instances by region, regulation, scale or recovery role?",
+      "default": "SINGLE_INSTANCE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1.html",
+      "enum": {
+        "SINGLE_INSTANCE": {
+          "label": "SINGLE INSTANCE",
+          "shortLabel": "SINGLE INSTANCE"
+        },
+        "MULTI_INSTANCE": {
+          "label": "MULTI INSTANCE",
+          "shortLabel": "MULTI INSTANCE"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [
+        {
+          "id": "DEC-PROT-001",
+          "when": "MULTI_INSTANCE",
+          "value": "REPLICATION",
+          "note": "Multi-instance often pairs with site replication / Fleet DR"
+        }
+      ],
+      "excludes": []
+    },
+    "DEC-WLD-001": {
+      "contextKey": "fleetWldMapping",
+      "domain": "WLD",
+      "sheetDomain": "COMPUTE",
+      "priority": "P0",
+      "title": "Workload-domain boundary",
+      "discoveryQuestion": "How should clusters be grouped into workload domains?",
+      "default": "ONE_PER_CLUSTER",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1.html",
+      "enum": {
+        "ONE_PER_CLUSTER": {
+          "label": "1:1 cluster to WLD",
+          "shortLabel": "1:1"
+        },
+        "AUTO_PREFIX": {
+          "label": "Auto-group by site prefix",
+          "shortLabel": "Prefix"
+        },
+        "POOL_ALL": {
+          "label": "Pooled single WLD",
+          "shortLabel": "Pool"
+        },
+        "ONE_PER_VCENTER": {
+          "label": "One WLD per vCenter",
+          "shortLabel": "vCenter"
+        },
+        "MANUAL": {
+          "label": "Manual mapping",
+          "shortLabel": "Manual"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-AVAIL-001": {
+      "contextKey": "hldSiteTopology",
+      "domain": "FLEET",
+      "sheetDomain": "RESILIENCE",
+      "priority": "P0",
+      "title": "Site topology",
+      "discoveryQuestion": "What site topology is required?",
+      "default": "SINGLE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1.html",
+      "enum": {
+        "SINGLE": {
+          "label": "SINGLE",
+          "shortLabel": "SINGLE"
+        },
+        "STRETCHED": {
+          "label": "STRETCHED",
+          "shortLabel": "STRETCHED"
+        },
+        "MULTI": {
+          "label": "MULTI",
+          "shortLabel": "MULTI"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-AVAIL-002": {
+      "contextKey": "hldAvailabilityObjective",
+      "domain": "FLEET",
+      "sheetDomain": "RESILIENCE",
+      "priority": "P0",
+      "title": "Availability objective",
+      "discoveryQuestion": "What availability target applies to control planes and workloads?",
+      "default": "HIGH_AVAILABILITY",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/06/30/security-patching-in-vcf-9/",
+      "enum": {
+        "STANDARD": {
+          "label": "STANDARD",
+          "shortLabel": "STANDARD"
+        },
+        "HIGH_AVAILABILITY": {
+          "label": "HIGH AVAILABILITY",
+          "shortLabel": "HIGH AVAILABILITY"
+        },
+        "CONTINUOUS": {
+          "label": "CONTINUOUS",
+          "shortLabel": "CONTINUOUS"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-NET-001": {
+      "contextKey": "networkingModel",
+      "domain": "MGMT",
+      "sheetDomain": "NETWORK",
+      "priority": "P0",
+      "title": "Networking consumption model",
+      "discoveryQuestion": "Will tenants consume centrally managed segments or self-service VPC networking?",
+      "default": "VPC",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/15/vcf-networking-9-1-exploring-network-services-for-virtual-private-clouds/",
+      "enum": {
+        "SEGMENT": {
+          "label": "SEGMENT",
+          "shortLabel": "SEGMENT"
+        },
+        "VPC": {
+          "label": "VPC",
+          "shortLabel": "VPC"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [
+        {
+          "id": "DEC-NET-007",
+          "when": "SEGMENT",
+          "value": "NOT_APPLICABLE",
+          "note": "VPC connectivity policy only when networkingModel=VPC"
+        }
+      ],
+      "excludes": []
+    },
+    "DEC-NET-002": {
+      "contextKey": "networkTransitType",
+      "domain": "MGMT",
+      "sheetDomain": "NETWORK",
+      "priority": "P0",
+      "title": "Transit routing model",
+      "discoveryQuestion": "Should VPC connectivity be centralized or distributed?",
+      "default": "CTGW",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/15/vcf-networking-9-1-exploring-network-services-for-virtual-private-clouds/",
+      "enum": {
+        "CTGW": {
+          "label": "CTGW",
+          "shortLabel": "CTGW"
+        },
+        "DTGW": {
+          "label": "DTGW",
+          "shortLabel": "DTGW"
+        },
+        "SEGMENT_T0": {
+          "label": "SEGMENT T0",
+          "shortLabel": "SEGMENT T0"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-NET-003": {
+      "contextKey": "networkPhysicalTopology",
+      "domain": "MGMT",
+      "sheetDomain": "NETWORK",
+      "priority": "P0",
+      "title": "Physical underlay topology",
+      "discoveryQuestion": "Is the physical fabric shared Layer 2, stretched Layer 2, or routed Layer 3?",
+      "default": "L2_SHARED",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/15/vcf-networking-9-1-exploring-network-services-for-virtual-private-clouds/",
+      "enum": {
+        "L2_SHARED": {
+          "label": "L2 SHARED",
+          "shortLabel": "L2 SHARED"
+        },
+        "L2_STRETCHED": {
+          "label": "L2 STRETCHED",
+          "shortLabel": "L2 STRETCHED"
+        },
+        "L3_ROUTED": {
+          "label": "L3 ROUTED",
+          "shortLabel": "L3 ROUTED"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-NET-004": {
+      "contextKey": "hldNetworkServices",
+      "domain": "MGMT",
+      "sheetDomain": "NETWORK",
+      "priority": "P0",
+      "title": "Required network services",
+      "discoveryQuestion": "Which stateful services are required: NAT, load balancing, VPN, firewall or threat prevention?",
+      "default": "NAT_LB",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/15/vcf-networking-9-1-exploring-network-services-for-virtual-private-clouds/",
+      "enum": {
+        "ROUTING_ONLY": {
+          "label": "ROUTING ONLY",
+          "shortLabel": "ROUTING ONLY"
+        },
+        "NAT_LB": {
+          "label": "NAT LB",
+          "shortLabel": "NAT LB"
+        },
+        "VPN": {
+          "label": "VPN",
+          "shortLabel": "VPN"
+        },
+        "SECURITY_SERVICES": {
+          "label": "SECURITY SERVICES",
+          "shortLabel": "SECURITY SERVICES"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-NET-005": {
+      "contextKey": "hldEdgeStrategy",
+      "domain": "MGMT",
+      "sheetDomain": "NETWORK",
+      "priority": "P0",
+      "title": "Gateway appliance placement",
+      "discoveryQuestion": "When appliances are required, should they use shared compute or a dedicated edge cluster?",
+      "default": "COLLAPSED_EDGE",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/15/vcf-networking-9-1-exploring-network-services-for-virtual-private-clouds/",
+      "enum": {
+        "COLLAPSED_EDGE": {
+          "label": "Collapsed NSX Edge VMs",
+          "shortLabel": "Collapsed Edge"
+        },
+        "DEDICATED_EDGE": {
+          "label": "Dedicated NSX Edge VMs",
+          "shortLabel": "Dedicated Edge"
+        },
+        "COLLAPSED_VNA": {
+          "label": "Collapsed VNA",
+          "shortLabel": "Collapsed VNA"
+        },
+        "DEDICATED_VNA": {
+          "label": "Dedicated VNA",
+          "shortLabel": "Dedicated VNA"
+        },
+        "BARE_METAL_EDGE": {
+          "label": "Bare-metal NSX Edge",
+          "shortLabel": "Bare metal"
+        },
+        "DISTRIBUTED": {
+          "label": "Distributed VLAN on ESXi",
+          "shortLabel": "Distributed"
+        },
+        "DISTRIBUTED_EVPN": {
+          "label": "Distributed EVPN",
+          "shortLabel": "EVPN"
+        },
+        "PHYSICAL_FABRIC": {
+          "label": "Physical fabric VLAN routing",
+          "shortLabel": "Fabric"
+        },
+        "NETWORK_REVIEW": {
+          "label": "Networking conflict — review",
+          "shortLabel": "Review"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-NET-006": {
+      "contextKey": "hldNicProfile",
+      "domain": "MGMT",
+      "sheetDomain": "NETWORK",
+      "priority": "P1",
+      "title": "Host uplink profile",
+      "discoveryQuestion": "Will traffic share two uplinks or use four or more physically separated uplinks?",
+      "default": "2",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1.html",
+      "enum": {
+        "2": {
+          "label": "2 NICs (collapsed / NIOC)",
+          "shortLabel": "2-NIC"
+        },
+        "4": {
+          "label": "4+ NICs (dedicated uplinks)",
+          "shortLabel": "4+ NIC"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-NET-007": {
+      "contextKey": "hldVpcConnectivityPolicy",
+      "domain": "MGMT",
+      "sheetDomain": "NETWORK",
+      "priority": "P1",
+      "title": "VPC connectivity policy",
+      "discoveryQuestion": "Should VPCs be isolated, grouped in communities, or connected to shared services?",
+      "default": "ISOLATED",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/15/vcf-networking-9-1-simpler-vpc-connectivity-control/",
+      "enum": {
+        "ISOLATED": {
+          "label": "ISOLATED",
+          "shortLabel": "ISOLATED"
+        },
+        "COMMUNITY": {
+          "label": "COMMUNITY",
+          "shortLabel": "COMMUNITY"
+        },
+        "SHARED_SERVICES": {
+          "label": "SHARED SERVICES",
+          "shortLabel": "SHARED SERVICES"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-NET-008": {
+      "contextKey": "hldVpcSpan",
+      "domain": "MGMT",
+      "sheetDomain": "NETWORK",
+      "priority": "P1",
+      "title": "VPC network span",
+      "discoveryQuestion": "Which clusters may host each VPC subnet?",
+      "default": "SELECTED_CLUSTERS",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/06/09/vcf-9-1-networking-precision-workload-placement-with-vpc-network-span/",
+      "enum": {
+        "ALL_CLUSTERS": {
+          "label": "ALL CLUSTERS",
+          "shortLabel": "ALL CLUSTERS"
+        },
+        "SELECTED_CLUSTERS": {
+          "label": "SELECTED CLUSTERS",
+          "shortLabel": "SELECTED CLUSTERS"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-STG-001": {
+      "contextKey": "hldStorageTopology",
+      "domain": "MGMT",
+      "sheetDomain": "STORAGE",
+      "priority": "P0",
+      "title": "Primary storage topology",
+      "discoveryQuestion": "Will storage be hyperconverged, a disaggregated vSAN storage cluster, or external?",
+      "default": "HCI",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/12/vsan-storage-clusters-in-vcf-9-1/",
+      "enum": {
+        "HCI": {
+          "label": "Hyperconverged (vSAN HCI)",
+          "shortLabel": "HCI"
+        },
+        "DISAGGREGATED": {
+          "label": "Disaggregated vSAN storage cluster",
+          "shortLabel": "Disagg"
+        },
+        "EXTERNAL": {
+          "label": "External storage",
+          "shortLabel": "External"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": [
+        {
+          "id": "DEC-STG-002",
+          "value": "VSAN_ESA",
+          "when": "EXTERNAL",
+          "note": "External topology deactivates vSAN protocol IDs"
+        },
+        {
+          "id": "DEC-STG-002",
+          "value": "VSAN_OSA",
+          "when": "EXTERNAL",
+          "note": "External topology deactivates vSAN protocol IDs"
+        }
+      ]
+    },
+    "DEC-STG-002": {
+      "contextKey": "hldStorageProto",
+      "domain": "MGMT",
+      "sheetDomain": "STORAGE",
+      "priority": "P0",
+      "title": "vSAN architecture",
+      "discoveryQuestion": "When vSAN is selected, is ESA or OSA required?",
+      "default": "VSAN_ESA",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/12/vsan-storage-clusters-in-vcf-9-1/",
+      "enum": {
+        "VSAN_ESA": {
+          "label": "vSAN ESA (NVMe)",
+          "shortLabel": "ESA"
+        },
+        "VSAN_OSA": {
+          "label": "vSAN OSA (Flash/Hybrid)",
+          "shortLabel": "OSA"
+        },
+        "EXTERNAL": {
+          "label": "External (FC/NFS/vVols)",
+          "shortLabel": "External"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-STG-003": {
+      "contextKey": "hldRemoteDatastoreModel",
+      "domain": "MGMT",
+      "sheetDomain": "STORAGE",
+      "priority": "P1",
+      "title": "Remote datastore model",
+      "discoveryQuestion": "Will compute mount local-only, shared or mixed OSA/ESA remote vSAN datastores?",
+      "default": "LOCAL_ONLY",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/12/vsan-storage-clusters-in-vcf-9-1/",
+      "enum": {
+        "LOCAL_ONLY": {
+          "label": "LOCAL ONLY",
+          "shortLabel": "LOCAL ONLY"
+        },
+        "SHARED": {
+          "label": "SHARED",
+          "shortLabel": "SHARED"
+        },
+        "MIXED_OSA_ESA": {
+          "label": "MIXED OSA ESA",
+          "shortLabel": "MIXED OSA"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-STG-004": {
+      "contextKey": "hldStorageEfficiency",
+      "domain": "MGMT",
+      "sheetDomain": "STORAGE",
+      "priority": "P1",
+      "title": "Storage efficiency services",
+      "discoveryQuestion": "Should compression and global deduplication be included in capacity assumptions?",
+      "default": "COMPRESSION",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/07/vsan-compression-and-global-deduplication-in-vcf-9-1/",
+      "enum": {
+        "COMPRESSION": {
+          "label": "COMPRESSION",
+          "shortLabel": "COMPRESSION"
+        },
+        "DEDUPE": {
+          "label": "DEDUPE",
+          "shortLabel": "DEDUPE"
+        },
+        "BOTH": {
+          "label": "BOTH",
+          "shortLabel": "BOTH"
+        },
+        "NONE": {
+          "label": "NONE",
+          "shortLabel": "NONE"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-STG-005": {
+      "contextKey": "hldEncryptionScope",
+      "domain": "MGMT",
+      "sheetDomain": "STORAGE",
+      "priority": "P0",
+      "title": "Encryption scope",
+      "discoveryQuestion": "Is encryption required at rest, in transit, both, or not by platform policy?",
+      "default": "AT_REST",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/05/platform-security-vcf-9-1/",
+      "enum": {
+        "NONE": {
+          "label": "NONE",
+          "shortLabel": "NONE"
+        },
+        "AT_REST": {
+          "label": "AT REST",
+          "shortLabel": "AT REST"
+        },
+        "IN_TRANSIT": {
+          "label": "IN TRANSIT",
+          "shortLabel": "IN TRANSIT"
+        },
+        "BOTH": {
+          "label": "BOTH",
+          "shortLabel": "BOTH"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-PROT-001": {
+      "contextKey": "hldProtectionModel",
+      "domain": "FLEET",
+      "sheetDomain": "RESILIENCE",
+      "priority": "P0",
+      "title": "Protection model",
+      "discoveryQuestion": "Which protection pattern is required?",
+      "default": "BACKUP",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/14/vmware-vsan-protection-and-recovery-enhancements-for-vcf-9-1/",
+      "enum": {
+        "BACKUP": {
+          "label": "BACKUP",
+          "shortLabel": "BACKUP"
+        },
+        "LOCAL_RECOVERY": {
+          "label": "LOCAL RECOVERY",
+          "shortLabel": "LOCAL RECOVERY"
+        },
+        "REPLICATION": {
+          "label": "REPLICATION",
+          "shortLabel": "REPLICATION"
+        },
+        "CYBER_VAULT": {
+          "label": "CYBER VAULT",
+          "shortLabel": "CYBER VAULT"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-PROT-002": {
+      "contextKey": "hldRecoveryObjectives",
+      "domain": "FLEET",
+      "sheetDomain": "RESILIENCE",
+      "priority": "P0",
+      "title": "Recovery objectives",
+      "discoveryQuestion": "What RPO, RTO and retention objectives must the platform support?",
+      "default": "UNRESOLVED",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/14/vmware-vsan-protection-and-recovery-enhancements-for-vcf-9-1/",
+      "enum": {
+        "UNRESOLVED": {
+          "label": "Unresolved",
+          "shortLabel": "—"
+        },
+        "MISSION_CRITICAL": {
+          "label": "Mission critical · 15m / 1h / 30d",
+          "shortLabel": "MC",
+          "structured": {
+            "rpoMinutes": 15,
+            "rtoMinutes": 60,
+            "retentionDays": 30
+          }
+        },
+        "BUSINESS_CRITICAL": {
+          "label": "Business critical · 1h / 4h / 30d",
+          "shortLabel": "BC",
+          "structured": {
+            "rpoMinutes": 60,
+            "rtoMinutes": 240,
+            "retentionDays": 30
+          }
+        },
+        "STANDARD_OBJ": {
+          "label": "Standard · 24h / 24h / 14d",
+          "shortLabel": "Std",
+          "structured": {
+            "rpoMinutes": 1440,
+            "rtoMinutes": 1440,
+            "retentionDays": 14
+          }
+        },
+        "CUSTOM": {
+          "label": "Architect-defined",
+          "shortLabel": "Custom"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-ID-001": {
+      "contextKey": "hldIdentityMode",
+      "domain": "FLEET",
+      "sheetDomain": "SECURITY",
+      "priority": "P0",
+      "title": "Identity Broker topology",
+      "discoveryQuestion": "Should Identity Broker be embedded, appliance-based, or three-node HA?",
+      "default": "THREE_NODE_HA",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/05/platform-security-vcf-9-1/",
+      "enum": {
+        "EMBEDDED": {
+          "label": "EMBEDDED",
+          "shortLabel": "EMBEDDED"
+        },
+        "APPLIANCE": {
+          "label": "APPLIANCE",
+          "shortLabel": "APPLIANCE"
+        },
+        "THREE_NODE_HA": {
+          "label": "THREE NODE HA",
+          "shortLabel": "THREE NODE"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-ID-002": {
+      "contextKey": "hldCaModel",
+      "domain": "FLEET",
+      "sheetDomain": "SECURITY",
+      "priority": "P0",
+      "title": "Certificate authority model",
+      "discoveryQuestion": "Which certificate authority model will govern the fleet?",
+      "default": "ENTERPRISE_PKI",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/05/platform-security-vcf-9-1/",
+      "enum": {
+        "VMCA": {
+          "label": "VMCA",
+          "shortLabel": "VMCA"
+        },
+        "MICROSOFT_CA": {
+          "label": "MICROSOFT CA",
+          "shortLabel": "MICROSOFT CA"
+        },
+        "OPENSSL": {
+          "label": "OPENSSL",
+          "shortLabel": "OPENSSL"
+        },
+        "ENTERPRISE_PKI": {
+          "label": "ENTERPRISE PKI",
+          "shortLabel": "ENTERPRISE PKI"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-ID-003": {
+      "contextKey": "hldVaultModel",
+      "domain": "FLEET",
+      "sheetDomain": "SECURITY",
+      "priority": "P1",
+      "title": "Credential vault integration",
+      "discoveryQuestion": "Will passwords remain platform-managed or integrate with an enterprise vault?",
+      "default": "PLATFORM",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/05/platform-security-vcf-9-1/",
+      "enum": {
+        "PLATFORM": {
+          "label": "PLATFORM",
+          "shortLabel": "PLATFORM"
+        },
+        "ENTERPRISE_VAULT": {
+          "label": "ENTERPRISE VAULT",
+          "shortLabel": "ENTERPRISE VAULT"
+        },
+        "HYBRID": {
+          "label": "HYBRID",
+          "shortLabel": "HYBRID"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-LCM-001": {
+      "contextKey": "hldLifecycleStrategy",
+      "domain": "FLEET",
+      "sheetDomain": "LIFECYCLE",
+      "priority": "P0",
+      "title": "Lifecycle strategy",
+      "discoveryQuestion": "Will operations use standard maintenance, rolling evacuation, or live patch where eligible?",
+      "default": "ROLLING",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/06/30/security-patching-in-vcf-9/",
+      "enum": {
+        "STANDARD": {
+          "label": "STANDARD",
+          "shortLabel": "STANDARD"
+        },
+        "ROLLING": {
+          "label": "ROLLING",
+          "shortLabel": "ROLLING"
+        },
+        "LIVE_PATCH": {
+          "label": "LIVE PATCH",
+          "shortLabel": "LIVE PATCH"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-OPS-001": {
+      "contextKey": "hldOpsTopology",
+      "domain": "FLEET",
+      "sheetDomain": "OPERATIONS",
+      "priority": "P1",
+      "title": "Operations deployment topology",
+      "discoveryQuestion": "What placement and HA model is required for VCF Operations?",
+      "default": "HA",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/05/scale-simplify-and-secure-your-private-cloud-operations-with-vcf-9-1/",
+      "enum": {
+        "STANDARD": {
+          "label": "STANDARD",
+          "shortLabel": "STANDARD"
+        },
+        "HA": {
+          "label": "HA",
+          "shortLabel": "HA"
+        },
+        "CONTINUOUS": {
+          "label": "CONTINUOUS",
+          "shortLabel": "CONTINUOUS"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-OPS-002": {
+      "contextKey": "hldTelemetryModel",
+      "domain": "FLEET",
+      "sheetDomain": "OPERATIONS",
+      "priority": "P1",
+      "title": "Logging and telemetry model",
+      "discoveryQuestion": "Which logs, flow data, retention and remote collectors are required?",
+      "default": "CENTRALIZED",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/05/scale-simplify-and-secure-your-private-cloud-operations-with-vcf-9-1/",
+      "enum": {
+        "CORE": {
+          "label": "CORE",
+          "shortLabel": "CORE"
+        },
+        "CENTRALIZED": {
+          "label": "CENTRALIZED",
+          "shortLabel": "CENTRALIZED"
+        },
+        "DISTRIBUTED": {
+          "label": "DISTRIBUTED",
+          "shortLabel": "DISTRIBUTED"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-OPS-003": {
+      "contextKey": "hldGovernanceModel",
+      "domain": "FLEET",
+      "sheetDomain": "OPERATIONS",
+      "priority": "P1",
+      "title": "Operational governance",
+      "discoveryQuestion": "Will fleet tags, compliance and cost/showback be centrally governed?",
+      "default": "CENTRALIZED",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/05/scale-simplify-and-secure-your-private-cloud-operations-with-vcf-9-1/",
+      "enum": {
+        "CENTRALIZED": {
+          "label": "CENTRALIZED",
+          "shortLabel": "CENTRALIZED"
+        },
+        "DELEGATED": {
+          "label": "DELEGATED",
+          "shortLabel": "DELEGATED"
+        },
+        "HYBRID": {
+          "label": "HYBRID",
+          "shortLabel": "HYBRID"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-AUTO-001": {
+      "contextKey": "derivedAuto",
+      "domain": "FLEET",
+      "sheetDomain": "AUTOMATION",
+      "priority": "P1",
+      "title": "Automation adoption",
+      "discoveryQuestion": "Will VCF Automation be deployed?",
+      "default": "false",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/28/vcf-automation-infrastructure-policies/",
+      "enum": {
+        "true": {
+          "label": "Automation on",
+          "shortLabel": "On"
+        },
+        "false": {
+          "label": "Automation off",
+          "shortLabel": "Off"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-AUTO-002": {
+      "contextKey": "hldPlacementGovernance",
+      "domain": "FLEET",
+      "sheetDomain": "AUTOMATION",
+      "priority": "P1",
+      "title": "Placement governance",
+      "discoveryQuestion": "Which infrastructure policies govern placement, licensing and data locality?",
+      "default": "UNRESOLVED",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/28/vcf-automation-infrastructure-policies/",
+      "enum": {
+        "UNRESOLVED": {
+          "label": "Unresolved",
+          "shortLabel": "—"
+        },
+        "NONE": {
+          "label": "No extra placement policies",
+          "shortLabel": "None"
+        },
+        "CLOUD_ZONES": {
+          "label": "Cloud zones",
+          "shortLabel": "Zones"
+        },
+        "TAG_BASED": {
+          "label": "Tag / capability-based",
+          "shortLabel": "Tags"
+        },
+        "PROJECT_REGULATORY": {
+          "label": "Project + regulatory",
+          "shortLabel": "Project"
+        },
+        "CUSTOM": {
+          "label": "Architect-defined",
+          "shortLabel": "Custom"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-VKS-001": {
+      "contextKey": "hldIncVKS",
+      "domain": "WLD",
+      "sheetDomain": "KUBERNETES",
+      "priority": "P1",
+      "title": "VKS adoption",
+      "discoveryQuestion": "Will the fleet provide vSphere Kubernetes Service?",
+      "default": "false",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/06/02/vcf-9-1-brings-multi-network-support-to-vmware-vsphere-kubernetes-service/",
+      "enum": {
+        "true": {
+          "label": "VKS on",
+          "shortLabel": "On"
+        },
+        "false": {
+          "label": "VKS off",
+          "shortLabel": "Off"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-VKS-002": {
+      "contextKey": "hldVksTopology",
+      "domain": "WLD",
+      "sheetDomain": "KUBERNETES",
+      "priority": "P1",
+      "title": "Supervisor topology",
+      "discoveryQuestion": "Should Supervisor be single-zone or zonal?",
+      "default": "SINGLE_ZONE",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/06/02/vcf-9-1-brings-multi-network-support-to-vmware-vsphere-kubernetes-service/",
+      "enum": {
+        "SINGLE_ZONE": {
+          "label": "SINGLE ZONE",
+          "shortLabel": "SINGLE ZONE"
+        },
+        "ZONAL": {
+          "label": "ZONAL",
+          "shortLabel": "ZONAL"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-VKS-003": {
+      "contextKey": "hldVksNetworking",
+      "domain": "WLD",
+      "sheetDomain": "KUBERNETES",
+      "priority": "P1",
+      "title": "Kubernetes networking",
+      "discoveryQuestion": "Will VKS use VDS, NSX VPC, overlay-only, or multiple node/pod networks?",
+      "default": "NSX_VPC",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/06/02/vcf-9-1-brings-multi-network-support-to-vmware-vsphere-kubernetes-service/",
+      "enum": {
+        "VDS": {
+          "label": "VDS",
+          "shortLabel": "VDS"
+        },
+        "NSX_VPC": {
+          "label": "NSX VPC",
+          "shortLabel": "NSX VPC"
+        },
+        "MULTI_NETWORK": {
+          "label": "MULTI NETWORK",
+          "shortLabel": "MULTI NETWORK"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-AI-001": {
+      "contextKey": "hldIncAI",
+      "domain": "WLD",
+      "sheetDomain": "AI",
+      "priority": "P1",
+      "title": "Private AI adoption",
+      "discoveryQuestion": "Will the design include VCF Private AI services?",
+      "default": "false",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1.html",
+      "enum": {
+        "true": {
+          "label": "Private AI on",
+          "shortLabel": "On"
+        },
+        "false": {
+          "label": "Private AI off",
+          "shortLabel": "Off"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-AI-002": {
+      "contextKey": "hldAiDataProfile",
+      "domain": "WLD",
+      "sheetDomain": "AI",
+      "priority": "P0",
+      "title": "AI data and fabric architecture",
+      "discoveryQuestion": "What training/inference, retention, checkpoint and east-west fabric profile is required?",
+      "default": "UNRESOLVED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1.html",
+      "enum": {
+        "UNRESOLVED": {
+          "label": "Unresolved",
+          "shortLabel": "—"
+        },
+        "GENERAL": {
+          "label": "General / mixed",
+          "shortLabel": "General"
+        },
+        "GPU_DENSE": {
+          "label": "GPU-dense",
+          "shortLabel": "GPU"
+        },
+        "DATA_LOCAL": {
+          "label": "Data-local / regulated",
+          "shortLabel": "Local"
+        },
+        "CUSTOM": {
+          "label": "Architect-defined",
+          "shortLabel": "Custom"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-SEC-001": {
+      "contextKey": "hldSecurityServices",
+      "domain": "FLEET",
+      "sheetDomain": "SECURITY",
+      "priority": "P0",
+      "title": "Advanced security services",
+      "discoveryQuestion": "Which micro-segmentation, IDS/IPS and malware-prevention services are required?",
+      "default": "BASELINE",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/05/platform-security-vcf-9-1/",
+      "enum": {
+        "BASELINE": {
+          "label": "BASELINE",
+          "shortLabel": "BASELINE"
+        },
+        "MICROSEGMENTATION": {
+          "label": "MICROSEGMENTATION",
+          "shortLabel": "MICROSEGMENTATION"
+        },
+        "IDS_IPS": {
+          "label": "IDS IPS",
+          "shortLabel": "IDS IPS"
+        },
+        "FULL": {
+          "label": "FULL",
+          "shortLabel": "FULL"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-MOB-001": {
+      "contextKey": "derivedHcx",
+      "domain": "FLEET",
+      "sheetDomain": "MOBILITY",
+      "priority": "P1",
+      "title": "Workload mobility",
+      "discoveryQuestion": "Will HCX or another mobility service be used for migration or network extension?",
+      "default": "NONE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1.html",
+      "enum": {
+        "true": {
+          "label": "HCX in scope",
+          "shortLabel": "HCX"
+        },
+        "false": {
+          "label": "HCX not in scope",
+          "shortLabel": "Off"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-COST-001": {
+      "contextKey": "hldCostModel",
+      "domain": "FLEET",
+      "sheetDomain": "GOVERNANCE",
+      "priority": "P1",
+      "title": "Licensing and cost model",
+      "discoveryQuestion": "What licensing, chargeback/showback and capacity-planning model is required?",
+      "default": "CENTRAL",
+      "sourceUrl": "https://blogs.vmware.com/cloud-foundation/2026/05/05/scale-simplify-and-secure-your-private-cloud-operations-with-vcf-9-1/",
+      "enum": {
+        "CENTRAL": {
+          "label": "CENTRAL",
+          "shortLabel": "CENTRAL"
+        },
+        "BUSINESS_UNIT": {
+          "label": "BUSINESS UNIT",
+          "shortLabel": "BUSINESS UNIT"
+        },
+        "TENANT": {
+          "label": "TENANT",
+          "shortLabel": "TENANT"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    },
+    "DEC-EDGE-001": {
+      "contextKey": "activeEdgePattern",
+      "domain": "EDGE",
+      "sheetDomain": "EDGE",
+      "priority": "P1",
+      "title": "Distributed edge pattern",
+      "discoveryQuestion": "Which validated edge operating pattern fits each remote site profile?",
+      "default": "UNRESOLVED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1.html",
+      "enum": {
+        "PATTERN_1": {
+          "label": "Edge pattern 1",
+          "shortLabel": "P1"
+        },
+        "PATTERN_2": {
+          "label": "Edge pattern 2",
+          "shortLabel": "P2"
+        },
+        "PATTERN_3": {
+          "label": "Edge pattern 3",
+          "shortLabel": "P3"
+        },
+        "PATTERN_4": {
+          "label": "Edge pattern 4",
+          "shortLabel": "P4"
+        },
+        "PATTERN_5": {
+          "label": "Edge pattern 5",
+          "shortLabel": "P5"
+        },
+        "PATTERN_6": {
+          "label": "Edge pattern 6",
+          "shortLabel": "P6"
+        },
+        "PATTERN_7": {
+          "label": "Edge pattern 7",
+          "shortLabel": "P7"
+        },
+        "PATTERN_8": {
+          "label": "Edge pattern 8",
+          "shortLabel": "P8"
+        },
+        "PATTERN_9": {
+          "label": "Edge pattern 9",
+          "shortLabel": "P9"
+        },
+        "PATTERN_10": {
+          "label": "Edge pattern 10",
+          "shortLabel": "P10"
+        },
+        "UNRESOLVED": {
+          "label": "Unresolved",
+          "shortLabel": "—"
+        },
+        "NOT_APPLICABLE": {
+          "label": "Not applicable",
+          "shortLabel": "N/A"
+        }
+      },
+      "impliedDecisions": [],
+      "excludes": []
+    }
+  },
+  "designIds": {
+    "VCF-PAI-REQD-CFG-001": {
+      "bucket": "AI",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AI-001",
+        "DEC-AI-002",
+        "DEC-NET-004"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/private-ai-platform-detailed-design.html",
+      "triggerCriteria": "hldIncAI=true",
+      "title": "GPU Host Profiling",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-PAI-REQD-CFG-002": {
+      "bucket": "AI",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AI-001",
+        "DEC-AI-002",
+        "DEC-NET-004"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/private-ai-platform-detailed-design.html",
+      "triggerCriteria": "hldIncAI=true",
+      "title": "Backend AI Network",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-PAI-REQD-CFG-003": {
+      "bucket": "AI",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AI-001",
+        "DEC-AI-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/private-ai-platform-detailed-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "NVIDIA Licensing System",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-PAI-REQD-CFG-004": {
+      "bucket": "AI",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AI-001",
+        "DEC-AI-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/private-ai-platform-detailed-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "AI Workload Orchestration Model",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-CFG-001": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-AUTO-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "VCF Automation Placement",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-CFG-002": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-AUTO-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "VCF Automation HA",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-CFG-004": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-ID-001",
+        "DEC-AUTO-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Identity Broker Integration",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-CFG-005": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-AUTO-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "NSX Cloud Accounts",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-CFG-006": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-NET-004",
+        "DEC-AUTO-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "VCF Auto Load Balancer",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-CFG-007": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-AUTO-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Automation Extensibility",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-CFG-008": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-AUTO-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Cloud Zone Grouping",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-CFG-009": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-AVAIL-002",
+        "DEC-AUTO-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x.html",
+      "triggerCriteria": "availabilityModel=HA; productionSizing=true",
+      "title": "Automation Sizing",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-CFG-010": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-ID-002",
+        "DEC-AUTO-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Certificates",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-CFG-003": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-NET-003",
+        "DEC-AUTO-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/external-services-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "VCF Automation Database/NTP",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-WLD-REQD-CFG-001": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-ARCH-001",
+      "parentDecisions": [
+        "DEC-ARCH-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/workload-domain-deployment-models/management-domain-deployment-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Management Domain Deployment",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-WLD-REQD-CFG-002": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-ARCH-001",
+      "parentDecisions": [
+        "DEC-ARCH-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/workload-domain-deployment-models/workload-domain-deployment-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Dedicated VI Workload Domain",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-WLD-REQD-CFG-003": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-ARCH-001",
+      "parentDecisions": [
+        "DEC-ARCH-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/workload-domain-deployment-models/management-domain-deployment-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Consolidated Architecture",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-WLD-REQD-CFG-004": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-ARCH-001",
+      "parentDecisions": [
+        "DEC-ID-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/workload-domain-deployment-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Single SSO Domain",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-WLD-REQD-CFG-005": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-ARCH-001",
+      "parentDecisions": [
+        "DEC-WLD-001"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/workload-domain-deployment-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Domain Naming Standard",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-SDDCMGR-REQD-CFG-001": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-MGMT-001",
+      "parentDecisions": [
+        "DEC-ARCH-001",
+        "DEC-ARCH-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/workload-domain-deployment-models/management-domain-deployment-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "SDDC Manager Placement",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-SDDCMGR-REQD-CFG-002": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-MGMT-001",
+      "parentDecisions": [
+        "DEC-ARCH-001",
+        "DEC-ARCH-002"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/workload-domain-deployment-models/management-domain-deployment-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "SDDC Manager Network",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-SDDCMGR-REQD-CFG-003": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-MGMT-001",
+      "parentDecisions": [
+        "DEC-ARCH-001",
+        "DEC-ARCH-002",
+        "DEC-PROT-001",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/security-modernization/vcf-backup-and-restore.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "SDDC Manager Backup",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-SDDCMGR-REQD-CFG-004": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-MGMT-001",
+      "parentDecisions": [
+        "DEC-ARCH-001",
+        "DEC-ARCH-002",
+        "DEC-NET-003"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/external-services-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "SDDC Manager NTP",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-SDDCMGR-REQD-CFG-005": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-MGMT-001",
+      "parentDecisions": [
+        "DEC-ARCH-001",
+        "DEC-ARCH-002",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/workload-domain-deployment-models/management-domain-deployment-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "SDDC Manager Sizing",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VC-REQD-CFG-001": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-VC-001",
+      "parentDecisions": [
+        "DEC-ARCH-002",
+        "DEC-WLD-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vsphere-detailed-design/vcenter-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Management vCenter Server",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VC-REQD-CFG-002": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-VC-001",
+      "parentDecisions": [
+        "DEC-ARCH-002",
+        "DEC-WLD-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vsphere-detailed-design/vcenter-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Workload Domain vCenter",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VC-REQD-CFG-003": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-VC-001",
+      "parentDecisions": [
+        "DEC-ARCH-002",
+        "DEC-WLD-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vsphere-detailed-design/vcenter-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "vCenter High Availability",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VC-REQD-CFG-004": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-VC-001",
+      "parentDecisions": [
+        "DEC-ARCH-002",
+        "DEC-WLD-001",
+        "DEC-PROT-001",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vsphere-detailed-design/vcenter-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "vCenter File-Based Backup",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VC-REQD-CFG-005": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-VC-001",
+      "parentDecisions": [
+        "DEC-ARCH-002",
+        "DEC-WLD-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vsphere-detailed-design/vcenter-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "vCenter Appliance Sizing",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-CLS-REQD-CFG-001": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-COMP-001",
+      "parentDecisions": [
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/cluster-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Cluster Services Minimums",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-CLS-REQD-CFG-002": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-COMP-001",
+      "parentDecisions": [
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/cluster-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Cluster High Availability",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-CLS-RCMD-CFG-001": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-COMP-001",
+      "parentDecisions": [
+        "DEC-ARCH-002"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/cluster-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Enhanced vMotion Compatibility",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-CLS-REQD-CFG-003": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-COMP-001",
+      "parentDecisions": [
+        "DEC-LCM-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/cluster-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Lifecycle Management",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NET-REQD-CFG-001": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-NET-006"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/network-designs.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Uplink Configuration",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NET-REQD-CFG-002": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-NET-003",
+        "DEC-NET-006"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/network-designs.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Jumbo Frames",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NET-REQD-CFG-003": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-NET-003",
+        "DEC-NET-006"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/network-designs.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Management VLAN",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NET-REQD-CFG-004": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-ARCH-002"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/network-designs.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "vMotion Network",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NET-REQD-CFG-005": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-ARCH-002"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/network-designs.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "vSAN Network Isolation",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-HCX-REQD-CFG-001": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-MOB-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/workload-mobility/getting-started-with-vmware-hcx-vcf-9-0/introduction-to-hcx-site-manager-deployments/hcx-connector-and-hcx-cloud-sites.html",
+      "triggerCriteria": "derivedHcx=true",
+      "title": "HCX Manager Placement",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-HCX-REQD-CFG-002": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-MOB-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/workload-mobility/getting-started-with-vmware-hcx-vcf-9-0/introduction-to-hcx-site-manager-deployments/hcx-connector-and-hcx-cloud-sites.html",
+      "triggerCriteria": "derivedHcx=true",
+      "title": "HCX Compute Profile",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-HCX-REQD-CFG-003": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-MOB-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/workload-mobility/getting-started-with-vmware-hcx-vcf-9-0/introduction-to-hcx-site-manager-deployments/hcx-connector-and-hcx-cloud-sites.html",
+      "triggerCriteria": "derivedHcx=true",
+      "title": "HCX Network Extension (L2 Stretch)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-HCX-REQD-CFG-004": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-MOB-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/workload-mobility/getting-started-with-vmware-hcx-vcf-9-0/introduction-to-hcx-site-manager-deployments/hcx-connector-and-hcx-cloud-sites.html",
+      "triggerCriteria": "derivedHcx=true",
+      "title": "HCX Service Mesh",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-CERT-REQD-CFG-001": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-SEC-001",
+      "parentDecisions": [
+        "DEC-ID-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/single-sign-on-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Enterprise CA Integration",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-CERT-REQD-CFG-002": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-SEC-001",
+      "parentDecisions": [
+        "DEC-ID-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/single-sign-on-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "VMCA Subordinate Configuration",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-BKP-REQD-CFG-001": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-PROT-001",
+      "parentDecisions": [
+        "DEC-ARCH-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/security-modernization/vcf-backup-and-restore.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Centralized SFTP Server Placement",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-BKP-REQD-CFG-002": {
+      "bucket": "CORE",
+      "baselineBundle": "BL-PROT-001",
+      "parentDecisions": [
+        "DEC-PROT-001",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/security-modernization/vcf-backup-and-restore.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Management Component Retention Policy",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VLR-REQD-CFG-001": {
+      "bucket": "DR",
+      "baselineBundle": "BL-PROT-001",
+      "parentDecisions": [
+        "DEC-PROT-001",
+        "DEC-AVAIL-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/security-modernization/vcf-disaster-recovery.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Live Recovery Placement",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VLR-REQD-CFG-002": {
+      "bucket": "DR",
+      "baselineBundle": "BL-PROT-001",
+      "parentDecisions": [
+        "DEC-PROT-001",
+        "DEC-AVAIL-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/security-modernization/vcf-disaster-recovery.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Cross-Site Pairing",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VLR-REQD-CFG-003": {
+      "bucket": "DR",
+      "baselineBundle": "BL-PROT-001",
+      "parentDecisions": [
+        "DEC-PROT-001",
+        "DEC-AVAIL-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/security-modernization/vcf-disaster-recovery.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "vSphere Replication",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-EDGE-REQD-PAT-001": {
+      "bucket": "EDGE",
+      "baselineBundle": "BL-EDGE-001",
+      "parentDecisions": [
+        "DEC-EDGE-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-edge-options-and-patterns-9-x/design-options-with-vcf-edge-full-stack/vcf-edge-centrally-managed-edge-compute-clusters.html",
+      "triggerCriteria": "activeEdgePattern=1",
+      "title": "Centrally Managed Edge (Pattern 1)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-EDGE-REQD-PAT-002": {
+      "bucket": "EDGE",
+      "baselineBundle": "BL-EDGE-001",
+      "parentDecisions": [
+        "DEC-EDGE-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-edge-options-and-patterns-9-x/design-options-with-vcf-edge-full-stack/vcf-edge-segregated-deployment-across-multi-region-domains.html",
+      "triggerCriteria": "activeEdgePattern=2",
+      "title": "Segregated Edge WLD (Pattern 2)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-EDGE-REQD-PAT-003": {
+      "bucket": "EDGE",
+      "baselineBundle": "BL-EDGE-001",
+      "parentDecisions": [
+        "DEC-EDGE-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-edge-options-and-patterns-9-x/design-options-with-vcf-edge-full-stack/vcf-edge-locally-managed-edge.html",
+      "triggerCriteria": "activeEdgePattern=3",
+      "title": "Locally Managed Edge (Pattern 3)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-EDGE-REQD-PAT-004": {
+      "bucket": "EDGE",
+      "baselineBundle": "BL-EDGE-001",
+      "parentDecisions": [
+        "DEC-EDGE-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-edge-options-and-patterns-9-x/design-options-with-vcf-edge-full-stack/vcf-edge-pattern-multi-region-fleet-distributed-edge.html",
+      "triggerCriteria": "activeEdgePattern=4",
+      "title": "Distributed VCF Fleet (Pattern 4)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-EDGE-REQD-PAT-005": {
+      "bucket": "EDGE",
+      "baselineBundle": "BL-EDGE-001",
+      "parentDecisions": [
+        "DEC-EDGE-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-edge-options-and-patterns-9-x/design-options-with-vcf-edge-full-stack/vcf-edge-dark-site.html",
+      "triggerCriteria": "activeEdgePattern=5",
+      "title": "Dark Site Edge (Pattern 5)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-EDGE-REQD-PAT-006": {
+      "bucket": "EDGE",
+      "baselineBundle": "BL-EDGE-001",
+      "parentDecisions": [
+        "DEC-EDGE-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-edge-options-and-patterns-9-x/design-options-with-vcf-edge-full-stack/vcf-edge-pattern-supervisor-multiple-domains.html",
+      "triggerCriteria": "activeEdgePattern=6",
+      "title": "Supervisor at the Edge (Pattern 6)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-EDGE-REQD-PAT-007": {
+      "bucket": "EDGE",
+      "baselineBundle": "BL-EDGE-001",
+      "parentDecisions": [
+        "DEC-EDGE-001",
+        "DEC-VKS-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-edge-options-and-patterns-9-x/design-options-with-vcf-edge-full-stack/vcf-edge-supervisor-zonal-separation.html",
+      "triggerCriteria": "activeEdgePattern=7",
+      "title": "Zonal Edge Separation (Pattern 7)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-EDGE-REQD-PAT-008": {
+      "bucket": "EDGE",
+      "baselineBundle": "BL-EDGE-001",
+      "parentDecisions": [
+        "DEC-EDGE-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-edge-options-and-patterns-9-x/design-options-with-vcf-edge-full-stack/vcf-edge-single-host-vsphere-supervisor.html",
+      "triggerCriteria": "activeEdgePattern=8",
+      "title": "Single-Host Supervisor (Pattern 8)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-EDGE-REQD-PAT-009": {
+      "bucket": "EDGE",
+      "baselineBundle": "BL-EDGE-001",
+      "parentDecisions": [
+        "DEC-EDGE-001",
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-edge-options-and-patterns-9-x/design-options-with-vcf-edge-full-stack/vcf-edge-existing-vcf-operations-far-edge-expansion.html",
+      "triggerCriteria": "activeEdgePattern=9",
+      "title": "Cloud Proxy for Remote Edge (Pattern 9)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-EDGE-REQD-PAT-010": {
+      "bucket": "EDGE",
+      "baselineBundle": "BL-EDGE-001",
+      "parentDecisions": [
+        "DEC-EDGE-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-edge-options-and-patterns-9-x/design-options-with-vcf-edge-full-stack/vcf-edge-colocated-vcenter-with-esx-host.html",
+      "triggerCriteria": "activeEdgePattern=10",
+      "title": "Colocated vCenter/ESXi (Pattern 10)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VDS-COM-REQD-CFG-001": {
+      "bucket": "NET",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-NET-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/network-designs/vsphere-cluster-network-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Distributed Switch Model",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VPC-REQD-CFG-001": {
+      "bucket": "NET",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-NET-007",
+        "DEC-NET-008"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/workload-connectivity-designs.html",
+      "triggerCriteria": "networkingModel=VPC",
+      "title": "Advanced VPC Networking",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NET-REQD-CFG-006": {
+      "bucket": "NET",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-NET-003",
+        "DEC-NET-006"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/network-designs.html",
+      "triggerCriteria": "hldNicProfile=4",
+      "title": "VLAN Separation",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NET-REQD-CFG-007": {
+      "bucket": "NET",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-NET-003",
+        "DEC-NET-006"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/network-designs.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "802.1Q Trunking",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NET-REQD-CFG-008": {
+      "bucket": "NET",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-NET-003",
+        "DEC-NET-006"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/network-designs.html",
+      "triggerCriteria": "hldSiteTopology=MULTI",
+      "title": "Inter-Instance MTU",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NET-L3MR-REQD-CFG-001": {
+      "bucket": "NET",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-NET-003",
+        "DEC-NET-006"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/cluster-models/layer-3-multi-rack-cluster.html",
+      "triggerCriteria": "networkPhysicalTopology=L3_ROUTED",
+      "title": "Multi-Rack VLANs",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NET-L3MR-REQD-CFG-002": {
+      "bucket": "NET",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-NET-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/cluster-models/layer-3-multi-rack-cluster.html",
+      "triggerCriteria": "networkPhysicalTopology=L3_ROUTED",
+      "title": "Multi-Rack Routing",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AVI-REQD-CFG-001": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-NET-004"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-load-balancing-detailed-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Advanced Load Balancing",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-LM-REQD-CFG-001": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/nsx-management-and-control-plane-detailed-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "NSX Manager Network",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-LM-REQD-CFG-002": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/nsx-management-and-control-plane-detailed-design/high-availability-nsx-manager-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "Mgmt Domain NSX Cluster",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-LM-REQD-CFG-003": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/nsx-management-and-control-plane-detailed-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "VI Domain NSX Cluster",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-LM-REQD-CFG-004": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/nsx-management-and-control-plane-detailed-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "NSX Manager Anti-Affinity",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-LM-REQD-CFG-005": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/nsx-management-and-control-plane-detailed-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "NSX Manager Sizing",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-EDGE-REQD-CFG-001": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-NET-002",
+        "DEC-NET-004",
+        "DEC-NET-005"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/design-library-nsx-edge-cluster.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "NSX Edge Cluster Size",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-EDGE-REQD-CFG-002": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-AVAIL-002",
+        "DEC-NET-002",
+        "DEC-NET-004",
+        "DEC-NET-005"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/design-library-nsx-edge-cluster.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "NSX Edge Node Sizing",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-EDGE-REQD-CFG-003": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-NET-002",
+        "DEC-NET-004",
+        "DEC-NET-005"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/design-library-nsx-edge-cluster.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Tier-0 Gateway",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-EDGE-REQD-CFG-004": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-NET-002",
+        "DEC-NET-004",
+        "DEC-NET-005"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/design-library-nsx-edge-cluster.html",
+      "triggerCriteria": "networkTransitType=CTGW",
+      "title": "BGP Route Learning",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-EDGE-REQD-CFG-005": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-AVAIL-002",
+        "DEC-NET-002",
+        "DEC-NET-004",
+        "DEC-NET-005"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/design-library-nsx-edge-cluster.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Edge Anti-Affinity",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-EDGE-REQD-CFG-006": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-NET-002",
+        "DEC-NET-004",
+        "DEC-NET-005"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/design-library-nsx-edge-cluster.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Edge TEP Network",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-FED-REQD-CFG-001": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-AVAIL-001",
+        "DEC-FLEET-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/nsx-management-and-control-plane-detailed-design/high-availability-nsx-global-manager-model.html",
+      "triggerCriteria": "hldMultiSiteType=FEDERATED",
+      "title": "NSX Federation",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-FED-REQD-CFG-002": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-AVAIL-001",
+        "DEC-FLEET-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/nsx-management-and-control-plane-detailed-design/high-availability-nsx-global-manager-model.html",
+      "triggerCriteria": "hldMultiSiteType=FEDERATED",
+      "title": "Global Manager Cluster",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-FED-REQD-CFG-003": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-AVAIL-002",
+        "DEC-NET-003",
+        "DEC-NET-006",
+        "DEC-AVAIL-001",
+        "DEC-FLEET-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/nsx-management-and-control-plane-detailed-design/high-availability-nsx-global-manager-model.html",
+      "triggerCriteria": "hldMultiSiteType=FEDERATED",
+      "title": "RTEP MTU Sizing",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-CFG-001": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-OPS-001",
+      "parentDecisions": [
+        "DEC-OPS-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "VCF Operations Placement",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-CFG-002": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-OPS-001",
+      "parentDecisions": [
+        "DEC-OPS-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "VCF Ops HA Cluster",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-CFG-003": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-OPS-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-for-logs-deployment-models.html",
+      "triggerCriteria": "derivedLogs=true",
+      "title": "VCF Operations for Logs",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-CFG-004": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-OPS-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-NET-004",
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-for-logs-deployment-models.html",
+      "triggerCriteria": "derivedLogs=true",
+      "title": "Logs Load Balancer",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-CFG-005": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-OPS-001",
+      "parentDecisions": [
+        "DEC-OPS-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Operations Network",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-CFG-006": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-OPS-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design.html",
+      "triggerCriteria": "derivedOpsNet=true",
+      "title": "Network Insight",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-CFG-007": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-OPS-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design.html",
+      "triggerCriteria": "derivedLogs=true",
+      "title": "Log Forwarding",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-CFG-008": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-OPS-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "VCF Ops Sizing",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-CFG-009": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-OPS-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Cloud Proxy Deployment",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-CFG-010": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-OPS-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-OPS-003",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design.html",
+      "triggerCriteria": "hldAvailabilityObjective=CONTINUOUS",
+      "title": "Continuous Availability",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-NET-REQD-CFG-001": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-OPS-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-for-networks-deployment-models.html",
+      "triggerCriteria": "derivedOpsNet=true",
+      "title": "VCF Ops for Networks Placement",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-NET-REQD-CFG-002": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-for-networks-deployment-models.html",
+      "triggerCriteria": "derivedOpsNet=true",
+      "title": "VCF Ops for Networks Sizing",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-LOGS-REQD-CFG-001": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-OPS-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-for-logs-deployment-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Dedicated Log Forwarding Architecture",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VDEFEND-REQD-CFG-001": {
+      "bucket": "SEC",
+      "baselineBundle": "BL-SEC-001",
+      "parentDecisions": [
+        "DEC-SEC-001",
+        "DEC-NET-004"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/security-modernization/vdefend-lateral-security.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "vDefend Lateral Security",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-RR-REQD-CFG-001": {
+      "bucket": "SEC",
+      "baselineBundle": "BL-SEC-001",
+      "parentDecisions": [
+        "DEC-SEC-001",
+        "DEC-PROT-001",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/security-modernization/vcf-ransomware-recovery.html",
+      "triggerCriteria": "hldProtectionModel=CYBER_VAULT",
+      "title": "Isolated Recovery Environment",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-RR-REQD-CFG-002": {
+      "bucket": "SEC",
+      "baselineBundle": "BL-SEC-001",
+      "parentDecisions": [
+        "DEC-SEC-001",
+        "DEC-PROT-001",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/security-modernization/vcf-ransomware-recovery.html",
+      "triggerCriteria": "hldProtectionModel=CYBER_VAULT",
+      "title": "Immutable Snapshots",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-RR-REQD-CFG-003": {
+      "bucket": "SEC",
+      "baselineBundle": "BL-SEC-001",
+      "parentDecisions": [
+        "DEC-SEC-001",
+        "DEC-PROT-001",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/security-modernization/vcf-ransomware-recovery.html",
+      "triggerCriteria": "hldProtectionModel=CYBER_VAULT",
+      "title": "Recovery Overlay Isolation",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-SEC-REQD-CFG-001": {
+      "bucket": "SEC",
+      "baselineBundle": "BL-SEC-001",
+      "parentDecisions": [
+        "DEC-SEC-001",
+        "DEC-NET-004"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-information-security-and-access-design-for-esxi.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Distributed IDS/IPS",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-SEC-REQD-CFG-002": {
+      "bucket": "SEC",
+      "baselineBundle": "BL-SEC-001",
+      "parentDecisions": [
+        "DEC-SEC-001",
+        "DEC-NET-004"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-information-security-and-access-design-for-esxi.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Micro-segmentation",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-SEC-REQD-CFG-003": {
+      "bucket": "SEC",
+      "baselineBundle": "BL-SEC-001",
+      "parentDecisions": [
+        "DEC-SEC-001",
+        "DEC-NET-004"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-information-security-and-access-design-for-esxi.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Malware Prevention",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VKS-REQD-CFG-001": {
+      "bucket": "VKS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-VKS-001",
+        "DEC-VKS-002",
+        "DEC-VKS-003"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/self-service-iaas-deployment-models/vsphere-supervisor-control-plane-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "vSphere Supervisor Enablement",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VKS-REQD-CFG-002": {
+      "bucket": "VKS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-VKS-001",
+        "DEC-NET-004",
+        "DEC-VKS-002",
+        "DEC-VKS-003"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/self-service-iaas-deployment-models/vsphere-supervisor-control-plane-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Supervisor Load Balancer",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VKS-REQD-CFG-003": {
+      "bucket": "VKS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-VKS-001",
+        "DEC-VKS-002",
+        "DEC-VKS-003"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/self-service-iaas-deployment-models/vsphere-supervisor-control-plane-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Control Plane IP Pool",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VKS-REQD-CFG-004": {
+      "bucket": "VKS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-VKS-001",
+        "DEC-VKS-002",
+        "DEC-VKS-003"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/self-service-iaas-deployment-models/vsphere-supervisor-control-plane-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Workload Ingress IP Pool",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VKS-REQD-CFG-005": {
+      "bucket": "VKS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-VKS-001",
+        "DEC-VKS-002",
+        "DEC-VKS-003",
+        "DEC-STG-001",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/self-service-iaas-deployment-models/vsphere-supervisor-control-plane-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Supervisor Storage Policy",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VKS-REQD-CFG-006": {
+      "bucket": "VKS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-VKS-001",
+        "DEC-VKS-002",
+        "DEC-VKS-003"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/self-service-iaas-deployment-models/vsphere-supervisor-control-plane-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Tanzu Kubernetes Grid",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VKS-REQD-CFG-007": {
+      "bucket": "VKS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-VKS-001",
+        "DEC-VKS-002",
+        "DEC-VKS-003"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/self-service-iaas-deployment-models/vsphere-supervisor-control-plane-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Namespace Quotas",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VKS-REQD-CFG-008": {
+      "bucket": "VKS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-VKS-001",
+        "DEC-VKS-002",
+        "DEC-VKS-003"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/self-service-iaas-deployment-models/vsphere-supervisor-control-plane-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Content Library Sync",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VKS-REQD-CFG-009": {
+      "bucket": "VKS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-VKS-001",
+        "DEC-VKS-002",
+        "DEC-VKS-003"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/self-service-iaas-deployment-models/vsphere-supervisor-control-plane-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "VKS Network Overlay",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VKS-REQD-CFG-010": {
+      "bucket": "VKS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-VKS-001",
+        "DEC-VKS-002",
+        "DEC-VKS-003"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/self-service-iaas-deployment-models/vsphere-supervisor-control-plane-models.html",
+      "triggerCriteria": "hldVksTopology=ZONAL",
+      "title": "Supervisor Zonal Deployment",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-001": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-AVAIL-002",
+        "DEC-STG-002",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Raw Storage Capacity",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-002": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-STG-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Host Node Minimums",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-003": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-STG-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "hldStorageProto=VSAN_ESA",
+      "title": "vSAN ESA Architecture",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-004": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-STG-002",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Default Storage Policy",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-005": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-STG-002",
+        "DEC-STG-005"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "hldEncryptionScope!=NONE",
+      "title": "Data-at-Rest Encryption",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-006": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-STG-002",
+        "DEC-AVAIL-001",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "hldSiteTopology=STRETCHED",
+      "title": "Stretched Cluster Policy",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-007": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-STG-002",
+        "DEC-AVAIL-001",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "hldSiteTopology=STRETCHED",
+      "title": "Stretched Fault Domains",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-008": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-STG-002",
+        "DEC-AVAIL-001",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "hldSiteTopology=STRETCHED",
+      "title": "vSAN Witness Appliance",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-009": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-STG-002",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Slack Space Reservation",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-010": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-STG-002",
+        "DEC-NET-006"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Network Redundancy",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-011": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-STG-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Minimum vSAN Nodes",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-012": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-AVAIL-002",
+        "DEC-STG-002",
+        "DEC-PROT-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Raw Capacity Initial Needs",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-013": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-LCM-001",
+        "DEC-STG-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "vLCM Image Management",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-VSAN-REQD-CFG-014": {
+      "bucket": "VSAN",
+      "baselineBundle": "BL-STG-001",
+      "parentDecisions": [
+        "DEC-STG-001",
+        "DEC-STG-002",
+        "DEC-LCM-001"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/storage-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Hardware Compatibility List",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-LIC-REQD-CFG-001": {
+      "bucket": "LIC",
+      "baselineBundle": "BL-GOV-001",
+      "parentDecisions": [
+        "DEC-COST-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/license-server-detailed-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "VCF Licensing Model",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-LIC-RCMD-CFG-002": {
+      "bucket": "LIC",
+      "baselineBundle": "BL-GOV-001",
+      "parentDecisions": [
+        "DEC-COST-001"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/license-server-detailed-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "License Compliance Tracking",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-FLEET-REQD-CFG-001": {
+      "bucket": "FLEET",
+      "baselineBundle": "BL-ARCH-001",
+      "parentDecisions": [
+        "DEC-FLEET-001",
+        "DEC-FLEET-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/vmware-cloud-foundation-concepts/vcf-fleet-sizing-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "VCF Fleet Boundary Definition",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-FLEET-REQD-CFG-002": {
+      "bucket": "FLEET",
+      "baselineBundle": "BL-ARCH-001",
+      "parentDecisions": [
+        "DEC-FLEET-001",
+        "DEC-FLEET-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/vmware-cloud-foundation-concepts/vcf-fleet-sizing-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Fleet Management Placement",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-FLEET-RCMD-CFG-003": {
+      "bucket": "FLEET",
+      "baselineBundle": "BL-ARCH-001",
+      "parentDecisions": [
+        "DEC-FLEET-001",
+        "DEC-FLEET-002"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/vmware-cloud-foundation-concepts/vcf-fleet-sizing-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Multi-Instance Consumption Layer",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-COST-RCMD-CFG-001": {
+      "bucket": "COST",
+      "baselineBundle": "BL-GOV-001",
+      "parentDecisions": [
+        "DEC-COST-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Capacity Planning Cadence",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-COST-RCMD-CFG-002": {
+      "bucket": "COST",
+      "baselineBundle": "BL-GOV-001",
+      "parentDecisions": [
+        "DEC-COST-001"
+      ],
+      "ruleClassification": "INHERIT_PARENT_SCOPE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Cost Visibility / Chargeback",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NET-REQD-CFG-009": {
+      "bucket": "NET",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-NET-003"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/external-services-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "DNS Design",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NET-REQD-CFG-010": {
+      "bucket": "NET",
+      "baselineBundle": "BL-NET-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-NET-003"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/external-services-design.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "NTP / Time Source Design",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-MS-REQD-COM-001": {
+      "bucket": "FLEET",
+      "baselineBundle": "BL-MGMT-001",
+      "parentDecisions": [
+        "DEC-AVAIL-002",
+        "DEC-FLEET-001"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-management-services-availabilty-detailed-design/vcf-management-services-simple-deployment-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "MS IP Range",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-MS-REQD-COM-002": {
+      "bucket": "FLEET",
+      "baselineBundle": "BL-MGMT-001",
+      "parentDecisions": [
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-management-services-availabilty-detailed-design/vcf-management-services-simple-deployment-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "MS CAPV Anti-Affinity",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-MS-REQD-COM-003": {
+      "bucket": "FLEET",
+      "baselineBundle": "BL-MGMT-001",
+      "parentDecisions": [
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-management-services-availabilty-detailed-design/vcf-management-services-simple-deployment-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "MS vSphere HA Protection",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-MS-REQD-SIM-001": {
+      "bucket": "FLEET",
+      "baselineBundle": "BL-MGMT-001",
+      "parentDecisions": [
+        "DEC-AVAIL-002",
+        "DEC-FLEET-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-management-services-availabilty-detailed-design/vcf-management-services-simple-deployment-model.html",
+      "triggerCriteria": "availabilityModel=SIMPLE",
+      "title": "Simple MS Topology",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-MS-REQD-HA-001": {
+      "bucket": "FLEET",
+      "baselineBundle": "BL-MGMT-001",
+      "parentDecisions": [
+        "DEC-AVAIL-002",
+        "DEC-FLEET-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-management-services-availabilty-detailed-design/vcf-management-services-high-availability-deployment-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "HA MS Topology",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-SIM-001": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x/vcf-automation-simple-deployment-model.html",
+      "triggerCriteria": "availabilityModel=SIMPLE",
+      "title": "Simple Automation Topology",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-SIM-002": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x/vcf-automation-simple-deployment-model.html",
+      "triggerCriteria": "availabilityModel=SIMPLE",
+      "title": "Simple Automation vSphere HA",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-HA-001": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x/vcf-automation-high-availability-deployment-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "HA Automation Topology (TechDocs)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-SIM-001": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-blueprints-for/infrastructure-modernization/vcf-fleet-in-a-single-site-with-minimal-footprint-blueprint/management-domain-design-selections/operations-layer/simple-vcf-operations-model.html",
+      "triggerCriteria": "availabilityModel=SIMPLE",
+      "title": "Simple Operations Topology",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-COM-001": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-FLEET-001"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Ops Fleet Mgmt on MS",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-COM-003": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Cloud Proxy in Mgmt Cluster",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-NSX-LM-REQD-CFG-006": {
+      "bucket": "NSX",
+      "baselineBundle": "BL-NSX-001",
+      "parentDecisions": [
+        "DEC-NET-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/vmware-cloud-foundation-concepts/vcf-fleet-sizing-models-9-x.html",
+      "triggerCriteria": "availabilityModel=SIMPLE",
+      "title": "Simple NSX Manager (1-node)",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-COM-002": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-FLEET-001"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Fleet Mgmt Inherits MS Protection",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-COM-004": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Cloud Proxy vSphere HA",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-HA-001": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "HA Operations 3-Node Cluster",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-HA-002": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "HA Unified Ops Collector",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-HA-003": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "Ops Cluster DRS Anti-Affinity",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-HA-004": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-ID-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "Ops Cluster Certificate SANs",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-REQD-HA-005": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-ID-002",
+        "DEC-NET-004"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "availabilityModel=HA; opsExternalLB=true",
+      "title": "Ops External LB Certificate SAN",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-RCMD-HA-001": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-NET-004"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "Ops External Load Balancer",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-RCMD-HA-002": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "Per-Instance Collector Group",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-RCMD-HA-003": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "Additional Ops Collector Node",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-RCMD-HA-004": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "Collector DRS Anti-Affinity",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-RCMD-HA-005": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "Adapter Uses Collector Group",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-RECD-COM-001": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-002"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Cloud Proxy Data Persistence",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-OPS-RECD-COM-006": {
+      "bucket": "OPS",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-OPS-001",
+        "DEC-FLEET-001"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-operations-design/vcf-operations-ha-model.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Deploy Real-time Metrics",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "VCF-AUTO-REQD-HA-003": {
+      "bucket": "AUTO",
+      "baselineBundle": "BL-SOL-001",
+      "parentDecisions": [
+        "DEC-AUTO-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/design-library/vcf-automation-deployment-models-9-x/vcf-automation-high-availability-deployment-model.html",
+      "triggerCriteria": "availabilityModel=HA",
+      "title": "HA Automation vSphere HA",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "DES-FLEET-PNP": {
+      "bucket": "FLEET",
+      "baselineBundle": "BL-MGMT-001",
+      "parentDecisions": [
+        "DEC-AVAIL-002",
+        "DEC-FLEET-001"
+      ],
+      "ruleClassification": "BASELINE",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/vmware-cloud-foundation-concepts/vcf-fleet-sizing-models-9-x.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "Confirm Footprint via P&P Workbook",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    },
+    "DES-MS-HOSTED": {
+      "bucket": "FLEET",
+      "baselineBundle": "BL-MGMT-001",
+      "parentDecisions": [
+        "DEC-FLEET-001",
+        "DEC-AVAIL-002"
+      ],
+      "ruleClassification": "DECISION_LED",
+      "sourceUrl": "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/design/vmware-cloud-foundation-concepts/vcf-management-services-models.html",
+      "triggerCriteria": "ALWAYS",
+      "title": "MS-Hosted Component Inherits Topology",
+      "domainScope": [
+        "MGMT",
+        "WLD"
+      ]
+    }
+  },
+  "configValues": {
+    "vlan_management": {
+      "label": "Management VLAN",
+      "shape": "vlan_cidr_gw_mtu",
+      "requiredWhen": [
+        {
+          "decision": "DEC-ARCH-001",
+          "value": "GREENFIELD"
+        }
+      ],
+      "producedBy": [
+        "DEC-NET-003"
+      ]
+    },
+    "vlan_vmotion": {
+      "label": "vMotion VLAN",
+      "shape": "vlan_cidr_gw_mtu",
+      "requiredWhen": [
+        {
+          "decision": "ALWAYS"
+        }
+      ],
+      "producedBy": [
+        "DEC-NET-003"
+      ]
+    },
+    "vlan_vsan": {
+      "label": "vSAN VLAN",
+      "shape": "vlan_cidr_gw_mtu",
+      "requiredWhen": [
+        {
+          "decision": "DEC-STG-001",
+          "value": "HCI"
+        }
+      ],
+      "producedBy": [
+        "DEC-STG-001",
+        "DEC-NET-003"
+      ]
+    },
+    "recovery_objectives": {
+      "label": "Recovery objectives (structured)",
+      "shape": "recovery_objectives",
+      "requiredWhen": [
+        {
+          "decision": "DEC-PROT-002",
+          "valueNot": "UNRESOLVED"
+        }
+      ],
+      "producedBy": [
+        "DEC-PROT-002"
+      ]
+    },
+    "nic_profile": {
+      "label": "Physical host NIC profile",
+      "shape": "enum",
+      "requiredWhen": [
+        {
+          "decision": "ALWAYS"
+        }
+      ],
+      "producedBy": [
+        "DEC-NET-006"
+      ]
+    },
+    "storage_protocol": {
+      "label": "Primary storage protocol",
+      "shape": "enum",
+      "requiredWhen": [
+        {
+          "decision": "ALWAYS"
+        }
+      ],
+      "producedBy": [
+        "DEC-STG-002"
+      ]
+    },
+    "storage_topology": {
+      "label": "Primary storage topology",
+      "shape": "enum",
+      "requiredWhen": [
+        {
+          "decision": "ALWAYS"
+        }
+      ],
+      "producedBy": [
+        "DEC-STG-001"
+      ]
+    },
+    "dns_servers": {
+      "label": "DNS servers",
+      "shape": "string_list",
+      "requiredWhen": [
+        {
+          "decision": "ALWAYS"
+        }
+      ],
+      "producedBy": [
+        "DEC-NET-003"
+      ]
+    },
+    "ntp_servers": {
+      "label": "NTP servers",
+      "shape": "string_list",
+      "requiredWhen": [
+        {
+          "decision": "ALWAYS"
+        }
+      ],
+      "producedBy": [
+        "DEC-LCM-001"
+      ]
+    },
+    "sso_domain": {
+      "label": "SSO domain",
+      "shape": "hostname",
+      "requiredWhen": [
+        {
+          "decision": "ALWAYS"
+        }
+      ],
+      "producedBy": [
+        "DEC-ID-001"
+      ]
+    },
+    "certificate_model": {
+      "label": "Certificate authority model",
+      "shape": "enum",
+      "requiredWhen": [
+        {
+          "decision": "ALWAYS"
+        }
+      ],
+      "producedBy": [
+        "DEC-ID-002"
+      ]
+    }
+  },
+  "shapes": {
+    "vlan_cidr_gw_mtu": {
+      "type": "object",
+      "properties": {
+        "vlanId": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4094
+        },
+        "cidr": {
+          "type": "string",
+          "format": "cidr"
+        },
+        "gateway": {
+          "type": "string",
+          "format": "ipv4"
+        },
+        "mtu": {
+          "type": "integer",
+          "enum": [
+            1500,
+            9000
+          ]
+        }
+      },
+      "required": [
+        "vlanId",
+        "cidr",
+        "gateway"
+      ]
+    },
+    "recovery_objectives": {
+      "type": "object",
+      "properties": {
+        "rpoMinutes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rtoMinutes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retentionDays": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "rpoMinutes",
+        "rtoMinutes",
+        "retentionDays"
+      ]
+    },
+    "string_list": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hostname": {
+      "type": "string",
+      "format": "hostname"
+    },
+    "hostname_list": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "hostname"
+      }
+    },
+    "ipv4": {
+      "type": "string",
+      "format": "ipv4"
+    },
+    "cidr": {
+      "type": "string",
+      "format": "cidr"
+    },
+    "uri": {
+      "type": "string",
+      "format": "uri"
+    },
+    "enum": {
+      "type": "string"
+    },
+    "string": {
+      "type": "string"
+    }
+  },
+  "triggerAliases": {
+    "availabilityModel": {
+      "from": "hldAvailabilityObjective",
+      "map": {
+        "STANDARD": "SIMPLE",
+        "HIGH_AVAILABILITY": "HA",
+        "CONTINUOUS": "HA"
+      }
+    },
+    "productionSizing": {
+      "from": "hldAvailabilityObjective",
+      "map": {
+        "STANDARD": false,
+        "HIGH_AVAILABILITY": true,
+        "CONTINUOUS": true
+      }
+    },
+    "opsExternalLB": {
+      "from": "hldOpsTopology",
+      "map": {
+        "STANDARD": false,
+        "HA": true,
+        "CONTINUOUS": true
+      }
+    }
+  }
+}

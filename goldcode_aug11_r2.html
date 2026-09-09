@@ -7684,6 +7684,23 @@ const VCFApp = () => {
         hldDsmScope: 'OFF'
       });
       const setArchitectDecisionInput = (key, value) => setArchitectDecisionInputs(current => ({ ...current, [key]: value }));
+      const RECOVERY_OBJECTIVE_PRESETS_ = {
+        MISSION_CRITICAL: { rpoMinutes: 15, rtoMinutes: 60, retentionDays: 30 },
+        BUSINESS_CRITICAL: { rpoMinutes: 60, rtoMinutes: 240, retentionDays: 30 },
+        STANDARD_OBJ: { rpoMinutes: 1440, rtoMinutes: 1440, retentionDays: 14 },
+      };
+      const [recoveryObjectivesStructured, setRecoveryObjectivesStructured] = useState({ rpoMinutes: '', rtoMinutes: '', retentionDays: '' });
+      const [designPackageCustomerId, setDesignPackageCustomerId] = useState('Customer_1');
+      const [decisionTargetOverrides, setDecisionTargetOverrides] = useState([]); // [{ decisionId, contextKey, targetObjectId, value, domainScope }]
+      const commitRecoveryObjective = (preset) => {
+        setArchitectDecisionInput('hldRecoveryObjectives', preset);
+        if (RECOVERY_OBJECTIVE_PRESETS_[preset]) {
+          const p = RECOVERY_OBJECTIVE_PRESETS_[preset];
+          setRecoveryObjectivesStructured({ rpoMinutes: String(p.rpoMinutes), rtoMinutes: String(p.rtoMinutes), retentionDays: String(p.retentionDays) });
+        } else if (preset === 'UNRESOLVED') {
+          setRecoveryObjectivesStructured({ rpoMinutes: '', rtoMinutes: '', retentionDays: '' });
+        }
+      };
 
       useEffect(() => {
         const placement = hldEdgeStrategy.includes('DEDICATED') ? 'DEDICATED' : 'COLLAPSED';
@@ -7703,11 +7720,7 @@ const VCFApp = () => {
 
       const [hldIncSEC, setHldIncSEC] = useState(false);
       // Avi / HCX / DSM scope is controlled via architectDecisionInputs.*Scope dropdowns in Phase 6
-      useEffect(() => {
-        if (architectDecisionInputs.hldStorageTopology === 'DISAGGREGATED') {
-          setArchitectDecisionInput('hldStorageTopology', 'HCI');
-        }
-      }, [architectDecisionInputs.hldStorageTopology]);
+      // hldStorageTopology may be HCI | DISAGGREGATED | EXTERNAL (matches Design Decisions / dictionary).
       const [manualVksScope, setManualVksScope] = useState(null);
       const [aviDecision, setAviDecision] = useState({
         scaffold: true,
@@ -8789,8 +8802,26 @@ const VCFApp = () => {
         { key: 'hldVpcConnectivityPolicy', label: 'VPC connectivity policy', group: 'Network', when: (ctx) => ctx.networkingModel === 'VPC', options: [
           { value: 'NONE', label: 'None' }, { value: 'ISOLATED', label: 'Isolated VPCs' }, { value: 'COMMUNITY', label: 'Community connectivity' }, { value: 'SHARED_SERVICES', label: 'Shared services' }
         ] },
+        { key: 'hldNicProfile', label: 'Physical host NICs', group: 'Network', options: [
+          { value: '2', label: '2 NICs (collapsed / NIOC)' }, { value: '4', label: '4+ NICs (dedicated uplinks)' }
+        ], hint: 'Maps DEC-NET-006. 2-NIC → VCF-NET-REQD-CFG-011; 4+ → VCF-NET-REQD-CFG-006.' },
+        { key: 'hldNetworkServices', label: 'Required network services', group: 'Network', options: [
+          { value: 'ROUTING_ONLY', label: 'Routing only' }, { value: 'NAT_LB', label: 'NAT + load balancing' }, { value: 'VPN', label: 'VPN' }, { value: 'SECURITY_SERVICES', label: 'Security services' }
+        ] },
+        { key: 'hldVpcSpan', label: 'VPC network span', group: 'Network', when: (ctx) => ctx.networkingModel === 'VPC', options: [
+          { value: 'ALL_CLUSTERS', label: 'All clusters' }, { value: 'SELECTED_CLUSTERS', label: 'Selected clusters' }
+        ] },
         { key: 'hldStorageTopology', label: 'Primary storage topology', group: 'Storage', options: [
-          { value: 'HCI', label: 'Hyperconverged (vSAN HCI)' }, { value: 'EXTERNAL', label: 'External storage' }
+          { value: 'HCI', label: 'Hyperconverged (vSAN HCI)' }, { value: 'DISAGGREGATED', label: 'Disaggregated vSAN storage cluster' }, { value: 'EXTERNAL', label: 'External storage' }
+        ] },
+        { key: 'hldStorageProto', label: 'Primary storage protocol', group: 'Storage', options: [
+          { value: 'VSAN_ESA', label: 'vSAN ESA (NVMe)' }, { value: 'VSAN_OSA', label: 'vSAN OSA (Flash/Hybrid)' }, { value: 'EXTERNAL', label: 'External (FC/NFS/vVols)' }
+        ], hint: 'ESA → CFG-003; OSA → CFG-016; EXTERNAL pairs with topology EXTERNAL.' },
+        { key: 'hldRemoteDatastoreModel', label: 'Remote datastore model', group: 'Storage', when: (ctx) => ctx.hldStorageTopology !== 'EXTERNAL', options: [
+          { value: 'LOCAL_ONLY', label: 'Local only' }, { value: 'SHARED', label: 'Shared remote' }, { value: 'MIXED_OSA_ESA', label: 'Mixed OSA/ESA' }
+        ] },
+        { key: 'hldStorageEfficiency', label: 'Storage efficiency services', group: 'Storage', when: (ctx) => ctx.hldStorageTopology !== 'EXTERNAL', options: [
+          { value: 'COMPRESSION', label: 'Compression' }, { value: 'DEDUPE', label: 'Deduplication' }, { value: 'BOTH', label: 'Compression + dedupe' }, { value: 'NONE', label: 'None' }
         ] },
         { key: 'hldEncryptionScope', label: 'Storage encryption scope', group: 'Storage', when: (ctx) => ctx.hldStorageTopology !== 'EXTERNAL', options: [
           { value: 'NONE', label: 'None by platform policy' }, { value: 'AT_REST', label: 'At rest' }, { value: 'IN_TRANSIT', label: 'In transit' }, { value: 'BOTH', label: 'At rest and in transit' }
@@ -8817,8 +8848,29 @@ const VCFApp = () => {
         { key: 'hldCaModel', label: 'Certificate authority model', group: 'Identity', options: [
           { value: 'VMCA', label: 'VMCA' }, { value: 'MICROSOFT_CA', label: 'Microsoft CA' }, { value: 'OPENSSL', label: 'OpenSSL' }, { value: 'ENTERPRISE_PKI', label: 'Enterprise PKI' }
         ] },
+        { key: 'hldVaultModel', label: 'Credential vault integration', group: 'Identity', options: [
+          { value: 'PLATFORM', label: 'Platform vault' }, { value: 'ENTERPRISE_VAULT', label: 'Enterprise vault' }, { value: 'HYBRID', label: 'Hybrid' }
+        ] },
         { key: 'hldLifecycleStrategy', label: 'Lifecycle strategy', group: 'Lifecycle', options: [
           { value: 'STANDARD', label: 'Standard maintenance' }, { value: 'ROLLING', label: 'Rolling evacuation' }, { value: 'LIVE_PATCH', label: 'Live patch where eligible' }
+        ] },
+        { key: 'hldOpsTopology', label: 'Operations deployment topology', group: 'Operations', options: [
+          { value: 'STANDARD', label: 'Standard' }, { value: 'HA', label: 'High availability' }, { value: 'CONTINUOUS', label: 'Continuous availability' }
+        ] },
+        { key: 'hldTelemetryModel', label: 'Logging and telemetry model', group: 'Operations', options: [
+          { value: 'CORE', label: 'Core' }, { value: 'CENTRALIZED', label: 'Centralized' }, { value: 'DISTRIBUTED', label: 'Distributed' }
+        ] },
+        { key: 'hldGovernanceModel', label: 'Operational governance', group: 'Operations', options: [
+          { value: 'CENTRALIZED', label: 'Centralized' }, { value: 'DELEGATED', label: 'Delegated' }, { value: 'HYBRID', label: 'Hybrid' }
+        ] },
+        { key: 'hldVksTopology', label: 'Supervisor topology', group: 'Kubernetes', when: (ctx) => !!ctx.hldIncVKS, options: [
+          { value: 'SINGLE_ZONE', label: 'Single zone' }, { value: 'ZONAL', label: 'Zonal' }
+        ] },
+        { key: 'hldVksNetworking', label: 'Kubernetes networking', group: 'Kubernetes', when: (ctx) => !!ctx.hldIncVKS, options: [
+          { value: 'VDS', label: 'vDS' }, { value: 'NSX_VPC', label: 'NSX VPC' }, { value: 'MULTI_NETWORK', label: 'Multi-network' }
+        ] },
+        { key: 'hldCostModel', label: 'Licensing and cost model', group: 'Governance', options: [
+          { value: 'CENTRAL', label: 'Central' }, { value: 'BUSINESS_UNIT', label: 'Business unit' }, { value: 'TENANT', label: 'Tenant' }
         ] },
         { key: 'hldSecurityServices', label: 'Advanced security services', group: 'Security', options: [
           { value: 'BASELINE', label: 'Platform baseline — no vDefend / micro-seg / IDS-IPS' }, { value: 'MICROSEGMENTATION', label: 'Micro-segmentation' }, { value: 'IDS_IPS', label: 'IDS/IPS' }, { value: 'FULL', label: 'Full security services' }
@@ -8896,13 +8948,27 @@ const VCFApp = () => {
           const scored = scoreStatus({ ...def, applicable });
           const currentValue = normalizeTriggerValue_(designDecisionContext[def.key]);
           let hint = def.hint || '';
+          let statusOverride = null;
           if (def.key === 'hldSecurityServices') {
             const baselineOnly = !hldIncSEC || currentValue === 'BASELINE' || currentValue === '';
             if (baselineOnly) {
-              scored.status = 'MAPPED';
+              statusOverride = 'MAPPED';
               hint = !hldIncSEC
                 ? 'Security & ransomware recovery is not in scope. Platform baseline only — no vDefend, micro-segmentation, or IDS/IPS Design IDs required.'
                 : 'Platform baseline: the customer is not doing micro-segmentation or IDS/IPS. vDefend coverage is not required.';
+            }
+          }
+          if (def.key === 'hldNicProfile' && currentValue === '2' && scored.catalogHitCount > 0 && scored.activeHitCount === 0) {
+            statusOverride = 'MAPPED';
+            hint = '2-NIC collapsed uses baseline networking IDs until VCF-NET-REQD-CFG-011 is loaded from the Design IDs sheet.';
+          }
+          if (def.key === 'hldStorageProto' && scored.catalogHitCount > 0 && scored.activeHitCount === 0) {
+            if (currentValue === 'EXTERNAL') {
+              statusOverride = 'MAPPED';
+              hint = 'External protocol pairs with Primary storage topology = EXTERNAL (VCF-STG-REQD-CFG-001). ESA/OSA-specific IDs stay inactive.';
+            } else if (currentValue === 'VSAN_OSA') {
+              statusOverride = 'MAPPED';
+              hint = 'OSA inherits HCI topology Design IDs until VCF-VSAN-REQD-CFG-016 is loaded from the Design IDs sheet.';
             }
           }
           return {
@@ -8916,7 +8982,7 @@ const VCFApp = () => {
             currentValue,
             ...scored,
             hint,
-            status: def.key === 'hldSecurityServices' && (!hldIncSEC || currentValue === 'BASELINE' || currentValue === '') ? 'MAPPED' : scored.status,
+            status: statusOverride || (def.key === 'hldSecurityServices' && (!hldIncSEC || currentValue === 'BASELINE' || currentValue === '') ? 'MAPPED' : scored.status),
           };
         });
 
@@ -10759,6 +10825,8 @@ const architectureMath = useMemo(() => {
         { legacyId: 'VCF-CLS-REQD-CFG-005', canonicalId: 'VCF-CLS-REQD-CFG-005', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Live patch lifecycle when hldLifecycleStrategy=LIVE_PATCH.' },
         { legacyId: 'VCF-VPC-REQD-CFG-005', canonicalId: 'VCF-VPC-REQD-CFG-005', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'No VPC connectivity policy when hldVpcConnectivityPolicy=NONE.' },
         { legacyId: 'VCF-AUTO-REQD-CFG-011', canonicalId: 'VCF-AUTO-REQD-CFG-011', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'No placement-governance overlay when hldPlacementGovernance=NONE.' },
+        { legacyId: 'VCF-NET-REQD-CFG-011', canonicalId: 'VCF-NET-REQD-CFG-011', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'Collapsed 2-NIC / NIOC profile when hldNicProfile=2.' },
+        { legacyId: 'VCF-VSAN-REQD-CFG-016', canonicalId: 'VCF-VSAN-REQD-CFG-016', action: 'PASS_THROUGH', matchType: 'NEW_DECISION_LED', notes: 'vSAN OSA architecture when hldStorageProto=VSAN_OSA.' },
         { legacyId: 'VCF-*', canonicalId: 'VCF-*', action: 'IGNORE_UNKNOWN', matchType: 'DEFAULT', notes: 'Unknown Requirement IDs: park in review queue; do not fail the entire push.' },
       ];
 
@@ -10790,18 +10858,101 @@ const architectureMath = useMemo(() => {
         };
 
         const allClusters = [...new Set((rawRvData?.vHost || []).map(h => getCol(h, ['cluster'])).filter(Boolean))];
-        const parentRows = (!parentDecisionAudit.legacyMode ? parentDecisionAudit.evaluated : []).map(item => ({
-          'Decision ID': item.decisionId,
-          'Domain': item.Domain || item.domain || '',
-          'Priority': item.priority,
-          'Architectural Decision': item.decision,
-          'Discovery Question': item.question,
-          'Current Value': item.currentValue,
-          'Resolution Status': item.resolutionStatus,
-          'Context Key': item.contextKey,
-          'Architectural Impact': item['Architectural Impact'] || item.architecturalImpact || '',
-          'Source URL': item['Source URL'] || item.sourceUrl || ''
-        }));
+        const hostRows = rawRvData?.vHost || [];
+        const vmRows = rawRvData?.vInfo || [];
+        const clusterTelemetry = (clusterName) => {
+          const hosts = hostRows.filter(h => getCol(h, ['cluster']) === clusterName);
+          const hostNames = new Set(hosts.map(h => getCol(h, ['host', 'hostname', 'name'])).filter(Boolean));
+          const vms = vmRows.filter(v => hostNames.has(getCol(v, ['host', 'hostname'])) || getCol(v, ['cluster']) === clusterName);
+          const cores = hosts.reduce((sum, h) => sum + (parseFloat(getCol(h, ['cores', 'numcores'])) || 0), 0);
+          const memoryGb = hosts.reduce((sum, h) => sum + ((parseFloat(getCol(h, ['memory', 'memorymb', 'memorymib'])) || 0) / 1024), 0);
+          const provisionedTb = vms.reduce((sum, v) => {
+            const mb = parseFloat(getCol(v, ['provisioned mb', 'provisionedmb', 'capacity mb', 'capacitymb'])) || 0;
+            return sum + (mb / (1024 * 1024));
+          }, 0);
+          const poweredOnVms = vms.filter(v => /poweredon|on/i.test(String(getCol(v, ['powerstate', 'state', 'power']) || ''))).length;
+          return {
+            hosts: hosts.length,
+            cores: Math.round(cores),
+            memoryGb: Math.round(memoryGb),
+            provisionedTb: Number(provisionedTb.toFixed(2)),
+            poweredOnVms,
+          };
+        };
+        const suggestedDomainRole_ = (cluster) => {
+          if (legacyClusters.includes(cluster)) return 'RETIRE';
+          if (edgeCandidateClusters.includes(cluster) || siteProfiles.some(p => (p.rvClusters || []).includes(cluster))) return 'EDGE';
+          if (cluster === fleetMgmtCluster || multiInstanceClusters.includes(cluster)) return 'MGMT';
+          return 'WLD';
+        };
+        const domainScopeOf_ = (item) => {
+          const sheetDomain = String(item.Domain || item.domain || '').toUpperCase();
+          const domainMap = {
+            ARCHITECTURE: 'FLEET', FLEET: 'FLEET', COMPUTE: 'WLD', RESILIENCE: 'FLEET', NETWORK: 'MGMT',
+            STORAGE: 'MGMT', SECURITY: 'FLEET', LIFECYCLE: 'FLEET', OPERATIONS: 'FLEET', AUTOMATION: 'FLEET',
+            KUBERNETES: 'WLD', AI: 'WLD', MOBILITY: 'FLEET', GOVERNANCE: 'FLEET', EDGE: 'EDGE',
+            FLEET: 'FLEET', MGMT: 'MGMT', WLD: 'WLD', CLUSTER: 'CLUSTER', CR: 'CR',
+          };
+          if (domainMap[sheetDomain]) return domainMap[sheetDomain];
+          const key = String(item.contextKey || '').toLowerCase();
+          if (key.includes('edge') || key.includes('pattern')) return 'EDGE';
+          if (key.includes('wld') || key.includes('workload') || key.includes('vks')) return 'WLD';
+          if (key.includes('fleet') || key.includes('instance')) return 'FLEET';
+          return 'FLEET';
+        };
+        const resolverHintOf_ = (item) => {
+          if (item.resolutionStatus !== 'UNRESOLVED') return '';
+          const key = String(item.contextKey || '').toLowerCase();
+          if (key.includes('recovery') || key.includes('rpo') || key.includes('rto')) return 'CUSTOMER';
+          if (key.includes('avi') || key.includes('vdefend') || key.includes('dsm') || key.includes('vks')) return 'SPECIALIST';
+          if (key.includes('storage') || key.includes('nic') || key.includes('cluster')) return 'INVENTORY_LOOKUP';
+          return 'PENDING_ADR';
+        };
+        const overrideByDecision = {};
+        (decisionTargetOverrides || []).forEach((row) => {
+          if (!row?.decisionId) return;
+          if (!overrideByDecision[row.decisionId]) overrideByDecision[row.decisionId] = [];
+          overrideByDecision[row.decisionId].push(row);
+        });
+        const recoveryStructuredValue = (() => {
+          const preset = architectDecisionInputs.hldRecoveryObjectives;
+          if (preset === 'UNRESOLVED' || !preset) return null;
+          const rpo = parseInt(recoveryObjectivesStructured.rpoMinutes, 10);
+          const rto = parseInt(recoveryObjectivesStructured.rtoMinutes, 10);
+          const ret = parseInt(recoveryObjectivesStructured.retentionDays, 10);
+          if (![rpo, rto, ret].every((n) => Number.isFinite(n))) return null;
+          return { rpoMinutes: rpo, rtoMinutes: rto, retentionDays: ret, preset };
+        })();
+        const parentRows = [];
+        (!parentDecisionAudit.legacyMode ? parentDecisionAudit.evaluated : []).forEach((item) => {
+          const base = {
+            'Decision ID': item.decisionId,
+            'Domain': item.Domain || item.domain || '',
+            'Domain Scope': domainScopeOf_(item),
+            'Target Object ID': '',
+            'Priority': item.priority,
+            'Architectural Decision': item.decision,
+            'Discovery Question': item.question,
+            'Current Value': item.currentValue,
+            'Structured Value': item.contextKey === 'hldRecoveryObjectives' && recoveryStructuredValue ? JSON.stringify(recoveryStructuredValue) : '',
+            'Resolution Status': item.resolutionStatus,
+            'Resolver Hint': resolverHintOf_(item),
+            'Provenance': item.resolutionStatus === 'RESOLVED' ? 'USER_SELECTED' : (item.resolutionStatus === 'UNRESOLVED' ? 'DEFAULT' : 'AUTO_FROM_INVENTORY'),
+            'Context Key': item.contextKey,
+            'Architectural Impact': item['Architectural Impact'] || item.architecturalImpact || '',
+            'Source URL': item['Source URL'] || item.sourceUrl || ''
+          };
+          parentRows.push(base);
+          (overrideByDecision[item.decisionId] || []).forEach((ov) => {
+            parentRows.push({
+              ...base,
+              'Target Object ID': ov.targetObjectId || '',
+              'Current Value': ov.value != null ? String(ov.value) : base['Current Value'],
+              'Domain Scope': ov.domainScope || base['Domain Scope'],
+              'Provenance': 'USER_SELECTED',
+            });
+          });
+        });
         const sowRows = architecturalDecisionLog.map(item => ({
           'Decision ID': item.id,
           'Category': item.bucket,
@@ -10810,24 +10961,34 @@ const architectureMath = useMemo(() => {
           'VCF Design Impact': item.justification,
           'Related Design IDs': mappedDesignIdsForAdr(item).map(req => req.id || req.ID || req.requirementid).join(', ')
         }));
-        const reqRows = activeApplicableDesignIds.map(item => ({
-          'Requirement ID': item.id || item.ID || item.requirementid || '',
-          'Bucket': String(item.bucket || item.Bucket || '').toUpperCase(),
-          'Title': item.title || item.Title || '',
-          'Decision Type': item['Decision Type'] || item.decisionType || '',
-          'Parent Decision IDs': item['Parent Decision IDs'] || item.parentDecisionIds || '',
-          'Baseline Bundle ID': item['Baseline Bundle ID'] || item.baselineBundleId || '',
-          'Rule Classification': item['Rule Classification'] || item.ruleClassification || '',
-          'Requirement': item.requirement || item.Requirement || '',
-          'Justification': item.justification || item.Justification || '',
-          'Source URL': item['Source URL'] || item.Source_URL || item.sourceUrl || item.source_url || ''
-        }));
+        const reqRows = activeApplicableDesignIds.map(item => {
+          const parentIds = String(item['Parent Decision IDs'] || item.parentDecisionIds || '').split(/[;,]/).map(s => s.trim()).filter(Boolean);
+          const emittedPath = parentIds.map((pid) => {
+            const match = parentRows.find(p => p['Decision ID'] === pid);
+            return match ? `${pid}=${match['Current Value'] || ''}` : pid;
+          }).join(' + ');
+          return {
+            'Requirement ID': item.id || item.ID || item.requirementid || '',
+            'Bucket': String(item.bucket || item.Bucket || '').toUpperCase(),
+            'Title': item.title || item.Title || '',
+            'Decision Type': item['Decision Type'] || item.decisionType || '',
+            'Parent Decision IDs': item['Parent Decision IDs'] || item.parentDecisionIds || '',
+            'Emitted By Decision Path': emittedPath,
+            'Applicable Domains': 'ALL',
+            'Baseline Bundle ID': item['Baseline Bundle ID'] || item.baselineBundleId || '',
+            'Rule Classification': item['Rule Classification'] || item.ruleClassification || '',
+            'Requirement': item.requirement || item.Requirement || '',
+            'Justification': item.justification || item.Justification || '',
+            'Source URL': item['Source URL'] || item.Source_URL || item.sourceUrl || item.source_url || ''
+          };
+        });
         const unresolvedRows = (!parentDecisionAudit.legacyMode ? parentDecisionAudit.unresolved : []).map(item => ({
           'Decision ID': item.decisionId,
           'Priority': item.priority,
           'Decision': item.decision,
           'Discovery Question': item.question,
           'Context Key': item.contextKey,
+          'Resolver Hint': resolverHintOf_(item),
           'Architect Answer': '',
           'Owner': '',
           'Due Date': ''
@@ -10859,12 +11020,29 @@ const architectureMath = useMemo(() => {
           'HW Refresh Blocked': p.hwRefreshBlocked ? 'Yes' : 'No',
           'Target Edge Pattern': p.targetEdgePattern || ''
         }));
-        const dispositionRows = allClusters.map(cluster => ({
-          'Cluster Name': cluster,
-          'Upgrade Disposition': legacyClusters.includes(cluster) ? 'Retain on vSphere 8' : 'Upgrade / include in VCF 9.1 path',
-          'Edge Pattern Assessment': edgeCandidateClusters.includes(cluster) ? 'Required' : 'Not flagged',
-          'Edge Profile Status': siteProfiles.some(profile => (profile.rvClusters || []).includes(cluster)) ? 'Profiled' : (edgeCandidateClusters.includes(cluster) ? 'Pending' : '')
-        }));
+        const dispositionRows = allClusters.map(cluster => {
+          const tele = clusterTelemetry(cluster);
+          const role = suggestedDomainRole_(cluster);
+          const instanceId = role === 'MGMT'
+            ? (cluster === fleetMgmtCluster ? 'instance_1' : `instance_${Math.max(2, multiInstanceClusters.indexOf(cluster) + 2)}`)
+            : (domainInstanceAssignments[cluster] || 'instance_1');
+          return {
+            'Cluster Name': cluster,
+            'Upgrade Disposition': legacyClusters.includes(cluster) ? 'Retain on vSphere 8' : 'Upgrade / include in VCF 9.1 path',
+            'suggestedDomainRole': role,
+            'Instance ID': String(instanceId).replace(/\s+/g, '_').toLowerCase(),
+            'Domain ID': role === 'MGMT' ? `mgmt_${String(cluster).replace(/\s+/g, '_').toLowerCase()}` : (role === 'EDGE' ? `edge_${String(cluster).replace(/\s+/g, '_').toLowerCase()}` : `wld_${String(cluster).replace(/\s+/g, '_').toLowerCase()}`),
+            'Domain Type': role,
+            'Phase': legacyClusters.includes(cluster) ? '2' : '1',
+            'hosts': tele.hosts,
+            'cores': tele.cores,
+            'memoryGb': tele.memoryGb,
+            'provisionedTb': tele.provisionedTb,
+            'poweredOnVms': tele.poweredOnVms,
+            'Edge Pattern Assessment': edgeCandidateClusters.includes(cluster) ? 'Required' : 'Not flagged',
+            'Edge Profile Status': siteProfiles.some(profile => (profile.rvClusters || []).includes(cluster)) ? 'Profiled' : (edgeCandidateClusters.includes(cluster) ? 'Pending' : '')
+          };
+        });
         const capabilityRows = (capabilities || []).map(capability => {
           const placement = capabilityScopeAssignments[capability.label] || 'ALL_FLEETS';
           const [scope, ...targetParts] = placement.split(':');
@@ -10877,22 +11055,179 @@ const architectureMath = useMemo(() => {
           };
         });
         const stubRows = [
-          { Field: 'dns_servers', Value: '', Notes: 'Fill for VCF-NET-REQD-CFG-009 / identity' },
-          { Field: 'dns_zone', Value: '', Notes: 'Management / SSO DNS zone' },
-          { Field: 'ntp_servers', Value: '', Notes: 'Fill for SDDCMGR / host time sync IDs' },
-          { Field: 'sso_domain', Value: '', Notes: 'vSphere SSO domain name' },
-          { Field: 'certificate_model', Value: architectDecisionInputs.hldCaModel || '', Notes: 'From DEC-ID-002; confirm CA details' },
-          { Field: 'vlan_management', Value: '', Notes: 'ID + CIDR + gateway + MTU' },
-          { Field: 'vlan_vmotion', Value: '', Notes: 'ID + CIDR + gateway + MTU' },
-          { Field: 'vlan_vsan', Value: '', Notes: 'ID + CIDR + gateway + MTU' },
-          { Field: 'vlan_overlay_teaming', Value: '', Notes: 'NSX / overlay uplinks' },
-          { Field: 'fqdn_sddc_manager', Value: '', Notes: 'Appliance inventory' },
-          { Field: 'fqdn_management_vcenter', Value: '', Notes: '' },
-          { Field: 'fqdn_nsx_managers', Value: '', Notes: 'Comma-separated if HA' },
-          { Field: 'vip_ops_or_lb', Value: '', Notes: 'Ops / Automation / Avi as applicable' },
-          { Field: 'ip_pool_supervisor_api', Value: '', Notes: 'When VKS in scope' },
-          { Field: 'backup_sftp_endpoint', Value: '', Notes: 'SDDC Mgr / vCenter file-based backup' },
-          { Field: 'vault_model', Value: architectDecisionInputs.hldVaultModel || '', Notes: 'Policy only — never export secrets' },
+          { Field: 'dns_servers', Value: '', shape: 'string_list', requiredWhen: 'ALWAYS', producedBy: 'DEC-NET / identity', Notes: 'Fill for VCF-NET-REQD-CFG-009 / identity' },
+          { Field: 'dns_zone', Value: '', shape: 'hostname', requiredWhen: 'ALWAYS', producedBy: 'DEC-ID', Notes: 'Management / SSO DNS zone' },
+          { Field: 'ntp_servers', Value: '', shape: 'string_list', requiredWhen: 'ALWAYS', producedBy: 'DEC-LCM', Notes: 'Fill for SDDCMGR / host time sync IDs' },
+          { Field: 'sso_domain', Value: '', shape: 'hostname', requiredWhen: 'ALWAYS', producedBy: 'DEC-ID-001', Notes: 'vSphere SSO domain name' },
+          { Field: 'certificate_model', Value: architectDecisionInputs.hldCaModel || '', shape: 'enum', requiredWhen: 'hldCaModel', producedBy: 'DEC-ID-002', Notes: 'From DEC-ID-002; confirm CA details' },
+          { Field: 'vlan_management', Value: '', shape: 'vlan_cidr_gw_mtu', requiredWhen: 'archMode=GREENFIELD', producedBy: 'DEC-NET-003', Notes: 'ID + CIDR + gateway + MTU' },
+          { Field: 'vlan_vmotion', Value: '', shape: 'vlan_cidr_gw_mtu', requiredWhen: 'ALWAYS', producedBy: 'DEC-NET-003', Notes: 'ID + CIDR + gateway + MTU' },
+          { Field: 'vlan_vsan', Value: '', shape: 'vlan_cidr_gw_mtu', requiredWhen: 'hldStorageTopology=HCI', producedBy: 'DEC-STG / DEC-NET', Notes: 'ID + CIDR + gateway + MTU' },
+          { Field: 'vlan_overlay_teaming', Value: '', shape: 'string', requiredWhen: 'ALWAYS', producedBy: 'DEC-NET', Notes: 'NSX / overlay uplinks' },
+          { Field: 'fqdn_sddc_manager', Value: '', shape: 'hostname', requiredWhen: 'ALWAYS', producedBy: 'DEC-FLEET', Notes: 'Appliance inventory' },
+          { Field: 'fqdn_management_vcenter', Value: '', shape: 'hostname', requiredWhen: 'ALWAYS', producedBy: 'DEC-FLEET', Notes: '' },
+          { Field: 'fqdn_nsx_managers', Value: '', shape: 'hostname_list', requiredWhen: 'ALWAYS', producedBy: 'DEC-NET', Notes: 'Comma-separated if HA' },
+          { Field: 'vip_ops_or_lb', Value: '', shape: 'ipv4', requiredWhen: 'derivedAuto|derivedAvi', producedBy: 'DEC-OPS / DEC-AVI', Notes: 'Ops / Automation / Avi as applicable' },
+          { Field: 'ip_pool_supervisor_api', Value: '', shape: 'cidr', requiredWhen: 'hldIncVKS=true', producedBy: 'DEC-VKS', Notes: 'When VKS in scope' },
+          { Field: 'backup_sftp_endpoint', Value: '', shape: 'uri', requiredWhen: 'ALWAYS', producedBy: 'DEC-PROT', Notes: 'SDDC Mgr / vCenter file-based backup' },
+          { Field: 'vault_model', Value: architectDecisionInputs.hldVaultModel || '', shape: 'enum', requiredWhen: 'hldProtectionModel=CYBER_VAULT', producedBy: 'DEC-PROT', Notes: 'Policy only — never export secrets' },
+          { Field: 'nic_profile', Value: hldNicProfile === '4' ? '4_PLUS' : '2_COLLAPSED', shape: 'enum', requiredWhen: 'ALWAYS', producedBy: 'hldNicProfile', Notes: 'Physical host NIC profile (2 vs 4+)' },
+          { Field: 'storage_protocol', Value: hldStorageProto, shape: 'enum', requiredWhen: 'ALWAYS', producedBy: 'hldStorageProto', Notes: 'VSAN_ESA | VSAN_OSA | EXTERNAL' },
+          { Field: 'storage_topology', Value: architectDecisionInputs.hldStorageTopology || '', shape: 'enum', requiredWhen: 'ALWAYS', producedBy: 'hldStorageTopology', Notes: 'HCI vs EXTERNAL' },
+        ];
+
+        const discoveredInventory = (() => {
+          const infraRe = /(^|[-_\s])(vcenter|vcsa|nsx|sddc|edge|vrops|aria|ops|photon|supervisor|hcx|avi|alb|jump|bastion|dns|ntp|dc\d*|pki|backup|veeam|horizon|connserver|uds|csg|uag|vrli|loginsight)([-_\s]|$)/i;
+          const highValueRe = /(^|[-_\s])(prod|prd|erp|sap|oracle|sql|mssql|db|critical|payment|core|pci|hipaa|finance)([-_\s]|$)/i;
+          const powered = vmRows.filter(v => /poweredon|on/i.test(String(getCol(v, ['powerstate', 'state', 'power']) || '')));
+          const infra = [];
+          const highValue = [];
+          powered.forEach((v) => {
+            const name = String(getCol(v, ['vm', 'name']) || '');
+            const guest = String(getCol(v, ['os', 'guestos', 'os according to the configuration file']) || '');
+            const blob = `${name} ${guest}`;
+            if (infraRe.test(blob)) infra.push(name);
+            else if (highValueRe.test(blob)) highValue.push(name);
+          });
+          return {
+            source: rawRvData?.vInfo ? 'rvtools' : 'none',
+            collectedAt: new Date().toISOString(),
+            totals: {
+              vms: vmRows.length,
+              clusters: allClusters.length,
+              hosts: hostRows.length,
+              provisionedTb: Number((vmRows.reduce((sum, v) => sum + ((parseFloat(getCol(v, ['provisioned mb', 'provisionedmb', 'capacity mb', 'capacitymb'])) || 0) / (1024 * 1024)), 0)).toFixed(2)),
+              poweredOnVms: powered.length,
+            },
+            missionCritical: { vms: highValue.length, method: 'high_value_first_wave', confidence: 'heuristic', sampleNames: highValue.slice(0, 25) },
+            infrastructureCandidates: { vms: infra.length, method: 'infra_pattern_match', sampleNames: infra.slice(0, 25) },
+          };
+        })();
+
+        const exportFilters = [
+          { step: 'exclude_optimization', dropped: 0, reason: 'config-push scope excludes optimization' },
+          { step: 'exclude_sizer_worksheets', dropped: 0, reason: 'sizer lives in its own workbook' },
+          { step: 'exclude_readiness_asset_tables', dropped: 0, reason: 'readiness evidence is optional separate download' },
+          { step: 'applicable_design_ids', dropped: Math.max(0, (vcgData.designIds || vcgData['Design IDs'] || []).length - activeApplicableDesignIds.length), reason: 'trigger criteria + bucket scope filter' },
+        ];
+
+        const sha256Hex_ = async (text) => {
+          if (window.crypto?.subtle) {
+            const buf = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+            return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+          }
+          let h = 2166136261;
+          for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+          return (`00000000${(h >>> 0).toString(16)}`).slice(-8).padStart(64, '0');
+        };
+
+        const buildDictionary_ = () => {
+          const catalog = vcgData.designDecisions || vcgData['Design Decisions'] || [];
+          const ids = vcgData.designIds || vcgData['Design IDs'] || vcgData.design_ids || [];
+          const domainMap = { ARCHITECTURE: 'FLEET', FLEET: 'FLEET', COMPUTE: 'WLD', RESILIENCE: 'FLEET', NETWORK: 'MGMT', STORAGE: 'MGMT', SECURITY: 'FLEET', LIFECYCLE: 'FLEET', OPERATIONS: 'FLEET', AUTOMATION: 'FLEET', KUBERNETES: 'WLD', AI: 'WLD', MOBILITY: 'FLEET', GOVERNANCE: 'FLEET', EDGE: 'EDGE' };
+          const appEnums = {
+            archMode: { GREENFIELD: { label: 'Greenfield' }, BROWNFIELD: { label: 'Brownfield' }, IMPORT: { label: 'Import' }, CONVERT: { label: 'Convert' }, UPGRADE: { label: 'Upgrade' } },
+            hldNicProfile: { '2': { label: '2 NICs collapsed' }, '4': { label: '4+ NICs dedicated' } },
+            hldStorageProto: { VSAN_ESA: { label: 'vSAN ESA' }, VSAN_OSA: { label: 'vSAN OSA' }, EXTERNAL: { label: 'External' } },
+            hldStorageTopology: { HCI: { label: 'HCI' }, DISAGGREGATED: { label: 'Disaggregated' }, EXTERNAL: { label: 'External' } },
+            hldRecoveryObjectives: {
+              UNRESOLVED: { label: 'Unresolved' },
+              MISSION_CRITICAL: { label: 'Mission critical', structured: RECOVERY_OBJECTIVE_PRESETS_.MISSION_CRITICAL },
+              BUSINESS_CRITICAL: { label: 'Business critical', structured: RECOVERY_OBJECTIVE_PRESETS_.BUSINESS_CRITICAL },
+              STANDARD_OBJ: { label: 'Standard', structured: RECOVERY_OBJECTIVE_PRESETS_.STANDARD_OBJ },
+              CUSTOM: { label: 'Architect-defined' },
+            },
+            fleetWldMapping: { ONE_PER_CLUSTER: { label: '1:1 cluster' }, AUTO_PREFIX: { label: 'Prefix' }, POOL_ALL: { label: 'Pool' }, ONE_PER_VCENTER: { label: 'vCenter' }, MANUAL: { label: 'Manual' } },
+          };
+          const decisions = {};
+          catalog.forEach((row) => {
+            const id = row['Decision ID'] || row.decisionId;
+            const key = row['Context Key'] || row.contextKey;
+            if (!id || !key) return;
+            const opts = String(row.Options || '').split('|').map((s) => s.trim()).filter(Boolean);
+            const enumObj = { ...(appEnums[key] || {}) };
+            opts.forEach((o) => { if (!o.includes('..') && !enumObj[o]) enumObj[o] = { label: o.replaceAll('_', ' ') }; });
+            enumObj.UNRESOLVED = enumObj.UNRESOLVED || { label: 'Unresolved' };
+            enumObj.NOT_APPLICABLE = { label: 'Not applicable' };
+            decisions[id] = {
+              contextKey: key,
+              domain: domainMap[String(row.Domain || row.domain || '').toUpperCase()] || 'FLEET',
+              priority: row.Priority || row.priority || 'P2',
+              title: row.Decision || row.decision || key,
+              sourceUrl: row['Source URL'] || row.sourceUrl || '',
+              default: row.Default || row.default || '',
+              enum: enumObj,
+              impliedDecisions: [],
+              excludes: [],
+            };
+          });
+          ARCHITECT_EXTENSION_KEYS_.forEach((def) => {
+            Object.values(decisions).forEach((d) => {
+              if (d.contextKey !== def.key || !def.options?.length) return;
+              def.options.forEach((opt) => { d.enum[opt.value] = { label: opt.label, shortLabel: opt.value }; });
+            });
+          });
+          const designIdMap = {};
+          ids.forEach((row) => {
+            const id = row.id || row.ID || row.requirementid;
+            if (!id) return;
+            designIdMap[id] = {
+              bucket: String(row.bucket || row.Bucket || '').toUpperCase(),
+              baselineBundle: row['Baseline Bundle ID'] || row.baselineBundleId || '',
+              parentDecisions: String(row['Parent Decision IDs'] || row.parentDecisionIds || '').split(/[;,]/).map((s) => s.trim()).filter(Boolean),
+              ruleClassification: row['Rule Classification'] || row.ruleClassification || '',
+              sourceUrl: row['Source URL'] || row.sourceUrl || '',
+              triggerCriteria: row['Trigger Criteria'] || row.triggerCriteria || '',
+              domainScope: ['MGMT', 'WLD'],
+            };
+          });
+          return {
+            schema: 'vcf-design-package-dictionary/v1',
+            packageSchema: 'vcf-design-package/v1',
+            generatedAt: new Date().toISOString(),
+            producerTool: 'goldcode_aug11_r2',
+            decisions,
+            designIds: designIdMap,
+            configValues: {
+              recovery_objectives: { label: 'Recovery objectives', shape: 'recovery_objectives', requiredWhen: [{ decision: 'DEC-PROT-002', valueNot: 'UNRESOLVED' }], producedBy: ['DEC-PROT-002'] },
+              nic_profile: { label: 'Physical host NIC profile', shape: 'enum', requiredWhen: [{ decision: 'ALWAYS' }], producedBy: ['DEC-NET-006'] },
+              storage_protocol: { label: 'Primary storage protocol', shape: 'enum', requiredWhen: [{ decision: 'ALWAYS' }], producedBy: ['DEC-STG-002'] },
+              storage_topology: { label: 'Primary storage topology', shape: 'enum', requiredWhen: [{ decision: 'ALWAYS' }], producedBy: ['DEC-STG-001'] },
+              vlan_management: { label: 'Management VLAN', shape: 'vlan_cidr_gw_mtu', requiredWhen: [{ decision: 'DEC-ARCH-001', value: 'GREENFIELD' }], producedBy: ['DEC-NET-003'] },
+            },
+            shapes: {
+              vlan_cidr_gw_mtu: { type: 'object', properties: { vlanId: { type: 'integer' }, cidr: { type: 'string' }, gateway: { type: 'string' }, mtu: { type: 'integer', enum: [1500, 9000] } }, required: ['vlanId', 'cidr', 'gateway'] },
+              recovery_objectives: { type: 'object', properties: { rpoMinutes: { type: 'integer' }, rtoMinutes: { type: 'integer' }, retentionDays: { type: 'integer' } }, required: ['rpoMinutes', 'rtoMinutes', 'retentionDays'] },
+              enum: { type: 'string' },
+            },
+            triggerAliases: {
+              availabilityModel: { from: 'hldAvailabilityObjective', map: { STANDARD: 'SIMPLE', HIGH_AVAILABILITY: 'HA', CONTINUOUS: 'HA' } },
+              productionSizing: { from: 'hldAvailabilityObjective', map: { STANDARD: false, HIGH_AVAILABILITY: true, CONTINUOUS: true } },
+            },
+          };
+        };
+
+        const dictionary = buildDictionary_();
+        const dictionaryJson = JSON.stringify(dictionary);
+        const crosswalkChecksum = await sha256Hex_(dictionaryJson);
+        const selectionFingerprint = await sha256Hex_(JSON.stringify({
+          customerId: designPackageCustomerId,
+          archMode, hldSiteTopology, hldInstanceStrategy, hldNicProfile, hldStorageProto,
+          hldStorageTopology: architectDecisionInputs.hldStorageTopology,
+          hldEncryptionScope: architectDecisionInputs.hldEncryptionScope,
+          hldRecoveryObjectives: architectDecisionInputs.hldRecoveryObjectives,
+          recoveryObjectivesStructured: recoveryStructuredValue,
+          hldLifecycleStrategy: architectDecisionInputs.hldLifecycleStrategy,
+          networkingModel: networkingDecision.networkingModel,
+          solutions: { hldIncAI, hldIncDR, hldIncSEC, hldIncDsm, VKS: !!complianceScope.VKS, hldAviScope, hldHcxScope, hldDsmScope },
+          applicableDesignIdCount: activeApplicableDesignIds.length,
+          decisionTargetOverrides,
+        }));
+
+        const stubRowsWithRecovery = [
+          ...stubRows,
+          { Field: 'recovery_objectives', Value: recoveryStructuredValue ? JSON.stringify(recoveryStructuredValue) : '', shape: 'recovery_objectives', requiredWhen: 'hldRecoveryObjectives!=UNRESOLVED', producedBy: 'DEC-PROT-002', Notes: 'Structured {rpoMinutes,rtoMinutes,retentionDays,preset}' },
+          { Field: 'customer_id', Value: designPackageCustomerId || 'Customer_1', shape: 'string', requiredWhen: 'ALWAYS', producedBy: '01_Meta', Notes: 'Stable customer key across re-exports' },
         ];
 
         const compatRows = CONFIG_PUSH_ID_COMPAT_.map(r => ({
@@ -10906,6 +11241,11 @@ const architectureMath = useMemo(() => {
         const metaRows = [
           { Key: 'schema', Value: 'vcf-design-package/v1' },
           { Key: 'exportedAt', Value: new Date().toISOString() },
+          { Key: 'producerToolVersion', Value: 'goldcode_aug11_r2' },
+          { Key: 'dictionaryVersion', Value: 'vcf-design-package-dictionary/v1' },
+          { Key: 'crosswalkChecksum', Value: crosswalkChecksum },
+          { Key: 'strictness', Value: 'lenient' },
+          { Key: 'customerId', Value: designPackageCustomerId || 'Customer_1' },
           { Key: 'targetVcfVersion', Value: targetVcfVersion || '9.1' },
           { Key: 'archMode', Value: archMode },
           { Key: 'siteTopology', Value: hldSiteTopology },
@@ -10915,41 +11255,53 @@ const architectureMath = useMemo(() => {
           { Key: 'wldMapping', Value: fleetWldMapping },
           { Key: 'edgeStrategy', Value: hldEdgeStrategy },
           { Key: 'storageProtocol', Value: hldStorageProto },
+          { Key: 'storageTopology', Value: architectDecisionInputs.hldStorageTopology || '' },
           { Key: 'nicProfile', Value: hldNicProfile },
+          { Key: 'recoveryObjectivesPreset', Value: architectDecisionInputs.hldRecoveryObjectives || 'UNRESOLVED' },
+          { Key: 'recoveryObjectivesStructured', Value: recoveryStructuredValue ? JSON.stringify(recoveryStructuredValue) : '' },
           { Key: 'inventoryLoaded', Value: rawRvData?.vInfo ? 'Yes' : 'No' },
+          { Key: 'producedFrom.rvtoolsLoaded', Value: rawRvData?.vInfo ? 'Yes' : 'No' },
+          { Key: 'producedFrom.hostCount', Value: String(discoveredInventory.totals.hosts) },
+          { Key: 'producedFrom.vmCount', Value: String(discoveredInventory.totals.vms) },
+          { Key: 'producedFrom.clusterCount', Value: String(discoveredInventory.totals.clusters) },
           { Key: 'applicableDesignIdCount', Value: String(activeApplicableDesignIds.length) },
           { Key: 'sowDecisionCount', Value: String(architecturalDecisionLog.length) },
+          { Key: 'selectionFingerprint', Value: selectionFingerprint },
           { Key: 'excluded', Value: 'optimization;sizer_worksheets;readiness_asset_tables;licensing_cores;png_diagrams' },
-          { Key: 'partnerReadme', Value: 'See EXPORTS_FOR_CONFIG_PUSH.md in the outputs repo; sheet 11_Config_Push_ID_Compat for legacy alias map' },
+          { Key: 'partnerReadme', Value: 'See EXPORTS_FOR_CONFIG_PUSH.md. Package = xlsx + json + dictionary. Patch Google Sheet from sheet-updates/.' },
         ];
 
         const readmeRows = [
-          { Topic: 'Purpose', Detail: 'Single Phase 1–6 decisions package for config-push / design-filler tools. No sizer or optimization data.' },
-          { Topic: 'Prefer', Detail: 'Import this workbook or the sibling VCF_Design_Package.json — do not stitch per-phase Excels for push scope.' },
-          { Topic: 'Requirements', Detail: 'Sheet 04_Applicable_Design_IDs is the filtered CFG/PAT checklist (VCF-CLS covers obsolete HA/DRS/EVC/ESXI).' },
-          { Topic: 'Compatibility', Detail: 'Sheet 11_Config_Push_ID_Compat maps legacy/PDF IDs (HA/DRS/EVC/ESXI/VCS) → canonical IDs and marks NEW_DECISION_LED children as PASS_THROUGH.' },
-          { Topic: 'Fill next', Detail: 'Sheet 10_Config_Values_Stub — NTP/DNS/VLAN/FQDN/VIP fields for your tool to collect.' },
-          { Topic: 'Evidence only', Detail: 'Optional separate downloads: Readiness Report, Upgrade Roadmap. Never Optimization or specialist sizer worksheets.' },
+          { Topic: 'Purpose', Detail: 'Phase 1–6 decisions package for configurator import (schema vcf-design-package/v1).' },
+          { Topic: 'Files', Detail: 'VCF_Design_Package.xlsx + VCF_Design_Package.json + VCF_Design_Package_dictionary_v1.json.' },
+          { Topic: 'Dictionary', Detail: 'Enums, design-ID parents, shapes — crosswalkChecksum in 01_Meta.' },
+          { Topic: 'NIC / Storage', Detail: 'nicProfile 2|4; storageTopology HCI|DISAGGREGATED|EXTERNAL; storageProtocol VSAN_ESA|VSAN_OSA|EXTERNAL.' },
+          { Topic: 'Recovery', Detail: 'Structured recovery objectives on meta + DEC-PROT-002 Structured Value.' },
+          { Topic: 'Domains', Detail: '08_Fleet_Disposition Instance/Domain IDs + telemetry for blueprint fan-out.' },
+          { Topic: 'Sheet updates', Detail: 'Import sheet-updates Design_Decisions_Options_Patch + Design_IDs_Add into Google Sheet.' },
+          { Topic: 'Evidence only', Detail: 'Optional Readiness/Upgrade exports only — never Optimization/sizers here.' },
         ];
 
         const wb = XLSX.utils.book_new();
         appendSheet(wb, '00_Package_README', readmeRows, [18, 90]);
         appendSheet(wb, '01_Meta', metaRows, [28, 60]);
-        appendSheet(wb, '02_Parent_Decisions', parentRows, [18, 16, 10, 34, 55, 28, 16, 28, 55, 40]);
+        appendSheet(wb, '02_Parent_Decisions', parentRows, [18, 12, 12, 18, 10, 34, 55, 28, 40, 16, 16, 16, 28, 55, 40]);
         appendSheet(wb, '03_SoW_Decision_Log', sowRows, [14, 14, 34, 40, 70, 40]);
-        appendSheet(wb, '04_Applicable_Design_IDs', reqRows, [28, 12, 34, 14, 28, 20, 18, 70, 50, 40]);
-        appendSheet(wb, '05_Unresolved_Decisions', unresolvedRows, [18, 10, 34, 55, 28, 40, 20, 14]);
+        appendSheet(wb, '04_Applicable_Design_IDs', reqRows, [28, 12, 34, 14, 28, 40, 14, 20, 18, 70, 50, 40]);
+        appendSheet(wb, '05_Unresolved_Decisions', unresolvedRows, [18, 10, 34, 55, 28, 16, 40, 20, 14]);
         appendSheet(wb, '06_Specialist_Handoffs', specialistRows, [28, 36, 28, 80]);
         appendSheet(wb, '07_Edge_Profiles', edgeRows, [24, 12, 8, 12, 10, 10, 10, 12, 10, 12, 10, 12, 18, 40, 12, 18]);
-        appendSheet(wb, '08_Fleet_Disposition', dispositionRows, [28, 36, 22, 18]);
+        appendSheet(wb, '08_Fleet_Disposition', dispositionRows, [28, 36, 16, 16, 24, 12, 8, 8, 8, 10, 10, 10, 22, 18]);
         appendSheet(wb, '09_Capability_Placement', capabilityRows, [34, 22, 36, 22, 70]);
-        appendSheet(wb, '10_Config_Values_Stub', stubRows, [28, 40, 50]);
+        appendSheet(wb, '10_Config_Values_Stub', stubRowsWithRecovery, [28, 40, 18, 28, 28, 50]);
         appendSheet(wb, '11_Config_Push_ID_Compat', compatRows, [30, 30, 16, 18, 70]);
         XLSX.writeFile(wb, 'VCF_Design_Package.xlsx');
 
-        const jsonPayload = {
+        const jsonPayloadBase = {
           schema: 'vcf-design-package/v1',
           meta: Object.fromEntries(metaRows.map(r => [r.Key, r.Value])),
+          discoveredInventory,
+          filters: exportFilters,
           parentDecisions: parentRows,
           sowDecisions: sowRows,
           requirements: reqRows,
@@ -10958,18 +11310,36 @@ const architectureMath = useMemo(() => {
           edgeProfiles: edgeRows,
           fleetDisposition: dispositionRows,
           capabilityPlacement: capabilityRows,
-          configValuesStub: Object.fromEntries(stubRows.map(r => [r.Field, r.Value])),
-          configValueNotes: Object.fromEntries(stubRows.map(r => [r.Field, r.Notes])),
+          configValuesStub: Object.fromEntries(stubRowsWithRecovery.map(r => [r.Field, r.Value])),
+          configValueNotes: Object.fromEntries(stubRowsWithRecovery.map(r => [r.Field, r.Notes])),
+          configValueShapes: Object.fromEntries(stubRowsWithRecovery.map(r => [r.Field, { shape: r.shape, requiredWhen: r.requiredWhen, producedBy: r.producedBy }])),
+          recoveryObjectives: recoveryStructuredValue,
+          decisionTargetOverrides,
           configPushIdCompatibility: compatRows,
           excluded: ['optimization', 'sizer_worksheets', 'readiness_asset_tables', 'licensing_cores', 'png_diagrams'],
+          dictionaryVersion: 'vcf-design-package-dictionary/v1',
+          crosswalkChecksum,
         };
-        const blob = new Blob([JSON.stringify(jsonPayload, null, 2)], { type: 'application/json;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'VCF_Design_Package.json';
-        a.click();
-        URL.revokeObjectURL(url);
+        const payloadSha = await sha256Hex_(JSON.stringify(jsonPayloadBase));
+        const jsonPayload = {
+          ...jsonPayloadBase,
+          integrity: {
+            selection_fingerprint: selectionFingerprint,
+            payload_sha256: payloadSha,
+            dictionary_sha256: crosswalkChecksum,
+          },
+        };
+        const downloadJson_ = (obj, filename) => {
+          const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.click();
+          URL.revokeObjectURL(url);
+        };
+        downloadJson_(jsonPayload, 'VCF_Design_Package.json');
+        downloadJson_(dictionary, 'VCF_Design_Package_dictionary_v1.json');
       };
 
       const downloadMgmtPNG = async () => {
@@ -14383,6 +14753,20 @@ const architectureMath = useMemo(() => {
                                      ? 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
                                      : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300';
                                    const onExtensionChange = (value) => {
+                                     if (row.key === 'hldNicProfile') {
+                                       setHldNicProfile(value);
+                                       return;
+                                     }
+                                     if (row.key === 'hldStorageProto') {
+                                       setHldStorageProto(value);
+                                       if (value === 'EXTERNAL') {
+                                         setArchitectDecisionInput('hldStorageTopology', 'EXTERNAL');
+                                         setArchitectDecisionInput('hldEncryptionScope', 'NONE');
+                                       } else if (architectDecisionInputs.hldStorageTopology === 'EXTERNAL') {
+                                         setArchitectDecisionInput('hldStorageTopology', 'HCI');
+                                       }
+                                       return;
+                                     }
                                      if (row.key === 'hldStorageTopology') {
                                        setArchitectDecisionInput('hldStorageTopology', value);
                                        if (value === 'EXTERNAL') {
@@ -14405,9 +14789,21 @@ const architectureMath = useMemo(() => {
                                      }
                                      setArchitectDecisionInput(row.key, value);
                                    };
-                                   const selectCls = 'w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900';
+                                   const selectCls = 'w-full min-w-0 border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900';
+                                   const extensionSelectValue = row.key === 'hldNicProfile'
+                                     ? hldNicProfile
+                                     : row.key === 'hldStorageProto'
+                                     ? hldStorageProto
+                                     : architectDecisionInputs[row.key];
+                                   const statusDisplay = row.key === 'hldRecoveryObjectives'
+                                     ? recoveryObjectiveLabel_(row.currentValue)
+                                     : row.kind === 'solution' && row.control === 'select'
+                                     ? solutionScopeLabel_(row.contextKey, row.currentValue)
+                                     : row.kind === 'solution' && row.control === 'toggle'
+                                     ? (row.enabled ? 'In scope' : 'Not in scope')
+                                     : String(row.currentValue || '—').replaceAll('_', ' ');
                                    return (
-                                     <div key={row.key} className="py-3 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)_auto] gap-2 xl:gap-3 items-start">
+                                     <div key={row.key} className="py-3 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_220px_132px] gap-x-3 gap-y-2 items-center">
                                        <div className="min-w-0">
                                          <div className="flex flex-wrap items-center gap-2">
                                            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">{row.group}</span>
@@ -14428,35 +14824,59 @@ const architectureMath = useMemo(() => {
                                            <button type="button" className="text-[10px] font-bold text-blue-700 dark:text-blue-300 mt-1 hover:underline" onClick={() => setActiveModule('DSM_PLANNER')}>Open DSM Planner →</button>
                                          )}
                                        </div>
-                                       <div className="min-w-0">
+                                       <div className="w-full min-w-0">
                                          {row.kind === 'solution' && row.control === 'toggle' && (
-                                           <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-200">
-                                             <input type="checkbox" className="w-4 h-4 text-blue-600 dark:text-blue-400 rounded" checked={!!row.enabled} onChange={(e) => row.setEnabled?.(e.target.checked)} />
-                                             {row.enabled ? 'In scope' : 'Not in scope'}
-                                           </label>
+                                           <select
+                                             className={selectCls}
+                                             value={row.enabled ? 'ON' : 'OFF'}
+                                             onChange={(e) => row.setEnabled?.(e.target.value === 'ON')}
+                                             aria-label={`${row.label} scope`}
+                                           >
+                                             <option value="OFF">Not in scope</option>
+                                             <option value="ON">In scope</option>
+                                           </select>
                                          )}
                                          {row.kind === 'solution' && row.control === 'select' && (
-                                           <select className={selectCls} value={architectDecisionInputs[row.contextKey] || 'OFF'} onChange={(e) => row.setValue?.(e.target.value)}>
+                                           <select className={selectCls} value={architectDecisionInputs[row.contextKey] || 'OFF'} onChange={(e) => row.setValue?.(e.target.value)} aria-label={`${row.label} scope`}>
                                              {(row.options || []).map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                                            </select>
                                          )}
                                          {row.kind === 'extension' && row.control === 'recoveryObjectives' && (
-                                           <select className={selectCls} value={['UNRESOLVED','MISSION_CRITICAL','BUSINESS_CRITICAL','STANDARD_OBJ','CUSTOM'].includes(architectDecisionInputs.hldRecoveryObjectives) ? architectDecisionInputs.hldRecoveryObjectives : (architectDecisionInputs.hldRecoveryObjectives ? 'CUSTOM' : 'UNRESOLVED')} onChange={(e) => setArchitectDecisionInput('hldRecoveryObjectives', e.target.value)}>
-                                             <option value="UNRESOLVED">Select an objective…</option>
-                                             <option value="MISSION_CRITICAL">Mission critical · 15m / 1h / 30d</option>
-                                             <option value="BUSINESS_CRITICAL">Business critical · 1h / 4h / 30d</option>
-                                             <option value="STANDARD_OBJ">Standard · 24h / 24h / 14d</option>
-                                             <option value="CUSTOM">Architect-defined</option>
-                                           </select>
+                                           <div className="space-y-2">
+                                             <select className={selectCls} value={['UNRESOLVED','MISSION_CRITICAL','BUSINESS_CRITICAL','STANDARD_OBJ','CUSTOM'].includes(architectDecisionInputs.hldRecoveryObjectives) ? architectDecisionInputs.hldRecoveryObjectives : (architectDecisionInputs.hldRecoveryObjectives ? 'CUSTOM' : 'UNRESOLVED')} onChange={(e) => commitRecoveryObjective(e.target.value)} aria-label={row.label}>
+                                               <option value="UNRESOLVED">Select an objective…</option>
+                                               <option value="MISSION_CRITICAL">Mission critical · 15m / 1h / 30d</option>
+                                               <option value="BUSINESS_CRITICAL">Business critical · 1h / 4h / 30d</option>
+                                               <option value="STANDARD_OBJ">Standard · 24h / 24h / 14d</option>
+                                               <option value="CUSTOM">Architect-defined</option>
+                                             </select>
+                                             {(architectDecisionInputs.hldRecoveryObjectives === 'CUSTOM' || RECOVERY_OBJECTIVE_PRESETS_[architectDecisionInputs.hldRecoveryObjectives]) && (
+                                               <div className="grid grid-cols-3 gap-1">
+                                                 {['rpoMinutes','rtoMinutes','retentionDays'].map((field) => (
+                                                   <label key={field} className="text-[9px] font-bold text-slate-500 dark:text-slate-400">
+                                                     {field === 'rpoMinutes' ? 'RPO min' : field === 'rtoMinutes' ? 'RTO min' : 'Retain d'}
+                                                     <input
+                                                       type="number"
+                                                       min="0"
+                                                       className="mt-0.5 w-full border border-slate-300 dark:border-slate-600 rounded px-1.5 py-1 text-[11px] font-bold bg-white dark:bg-slate-900"
+                                                       value={recoveryObjectivesStructured[field]}
+                                                       disabled={architectDecisionInputs.hldRecoveryObjectives !== 'CUSTOM'}
+                                                       onChange={(e) => setRecoveryObjectivesStructured((cur) => ({ ...cur, [field]: e.target.value }))}
+                                                     />
+                                                   </label>
+                                                 ))}
+                                               </div>
+                                             )}
+                                           </div>
                                          )}
                                          {row.kind === 'extension' && row.control !== 'recoveryObjectives' && row.options?.length > 0 && (
-                                           <select className={selectCls} value={row.key === 'hldStorageTopology' && architectDecisionInputs.hldStorageTopology === 'DISAGGREGATED' ? 'HCI' : architectDecisionInputs[row.key]} onChange={(e) => onExtensionChange(e.target.value)}>
+                                           <select className={selectCls} value={extensionSelectValue} onChange={(e) => onExtensionChange(e.target.value)} aria-label={row.label}>
                                              {row.options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                                            </select>
                                          )}
                                        </div>
-                                       <div className="xl:text-right text-[10px] text-slate-400 dark:text-slate-500 font-mono break-all max-w-[12rem]">
-                                         {row.key === 'hldRecoveryObjectives' ? recoveryObjectiveLabel_(row.currentValue) : row.kind === 'solution' && row.control === 'select' ? solutionScopeLabel_(row.contextKey, row.currentValue) : String(row.currentValue || '—').replaceAll('_', ' ')}
+                                       <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono uppercase tracking-wide truncate lg:text-right" title={statusDisplay}>
+                                         {statusDisplay}
                                        </div>
                                      </div>
                                    );
@@ -14648,7 +15068,13 @@ const architectureMath = useMemo(() => {
                                     <button onClick={() => setMatrixViewMode('VVD')} className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-all ${matrixViewMode === 'VVD' ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-sm border border-slate-200 dark:border-slate-700' : 'text-slate-500 dark:text-slate-400'}`}>Applicable Design IDs ({activeApplicableDesignIds.length})</button>
                                  </div>
                                  <button onClick={() => exportComplianceMatrix(specialistCapabilities)} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 px-4 rounded shadow text-xs flex items-center transition"><IconCheck className="w-3.5 h-3.5 mr-1.5 text-indigo-200" /> Export Excel</button>
-                                 <button type="button" onClick={() => exportDesignPackage(specialistCapabilities)} title="Phases 1–6 decisions only — Excel + JSON for config-push tools. Excludes sizer/optimization/licensing." className="bg-teal-700 hover:bg-teal-800 text-white font-bold py-1.5 px-4 rounded shadow text-xs flex items-center transition">Export Design Package</button>
+                                 <div className="flex flex-wrap items-center gap-2">
+                                   <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                     Customer ID
+                                     <input type="text" value={designPackageCustomerId} onChange={(e) => setDesignPackageCustomerId(e.target.value || 'Customer_1')} className="border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-xs font-bold bg-white dark:bg-slate-900 w-36" title="Stable across re-exports for the same customer" />
+                                   </label>
+                                   <button type="button" onClick={() => exportDesignPackage(specialistCapabilities)} title="Downloads XLSX + JSON + dictionary/v1 for configurator import" className="bg-teal-700 hover:bg-teal-800 text-white font-bold py-1.5 px-4 rounded shadow text-xs flex items-center transition">Export Design Package</button>
+                                 </div>
                               </div>
                            </div>
                            <div className="overflow-x-auto custom-scrollbar max-h-96">

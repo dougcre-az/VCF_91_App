@@ -1,0 +1,43 @@
+{
+  "schema": "vcf-design-package/v1",
+  "meta": {
+    "customerId": "Customer_Sample_GF",
+    "archMode": "GREENFIELD",
+    "siteTopology": "SINGLE",
+    "instanceStrategy": "SINGLE_INSTANCE",
+    "nicProfile": "2",
+    "storageTopology": "HCI",
+    "storageProtocol": "VSAN_ESA",
+    "recoveryObjectivesPreset": "STANDARD_OBJ",
+    "recoveryObjectivesStructured": "{\"rpoMinutes\":1440,\"rtoMinutes\":1440,\"retentionDays\":14,\"preset\":\"STANDARD_OBJ\"}",
+    "dictionaryVersion": "vcf-design-package-dictionary/v1",
+    "strictness": "lenient",
+    "applicableDesignIdCount": "12",
+    "note": "Minimal greenfield pin for importer unit tests — replace counts with live export."
+  },
+  "discoveredInventory": {
+    "source": "none",
+    "totals": { "vms": 0, "clusters": 1, "hosts": 4, "provisionedTb": 0, "poweredOnVms": 0 },
+    "missionCritical": { "vms": 0, "method": "high_value_first_wave", "confidence": "heuristic" },
+    "infrastructureCandidates": { "vms": 0, "method": "infra_pattern_match" }
+  },
+  "parentDecisions": [
+    { "Decision ID": "DEC-ARCH-001", "Context Key": "archMode", "Current Value": "GREENFIELD", "Resolution Status": "RESOLVED", "Domain Scope": "FLEET", "Target Object ID": "", "Provenance": "USER_SELECTED" },
+    { "Decision ID": "DEC-NET-006", "Context Key": "hldNicProfile", "Current Value": "2", "Resolution Status": "RESOLVED", "Domain Scope": "MGMT", "Target Object ID": "", "Provenance": "USER_SELECTED" },
+    { "Decision ID": "DEC-STG-001", "Context Key": "hldStorageTopology", "Current Value": "HCI", "Resolution Status": "RESOLVED", "Domain Scope": "MGMT", "Target Object ID": "", "Provenance": "USER_SELECTED" },
+    { "Decision ID": "DEC-STG-002", "Context Key": "hldStorageProto", "Current Value": "VSAN_ESA", "Resolution Status": "RESOLVED", "Domain Scope": "MGMT", "Target Object ID": "", "Provenance": "USER_SELECTED" },
+    { "Decision ID": "DEC-PROT-002", "Context Key": "hldRecoveryObjectives", "Current Value": "STANDARD_OBJ", "Structured Value": "{\"rpoMinutes\":1440,\"rtoMinutes\":1440,\"retentionDays\":14,\"preset\":\"STANDARD_OBJ\"}", "Resolution Status": "RESOLVED", "Domain Scope": "FLEET", "Target Object ID": "", "Provenance": "USER_SELECTED" }
+  ],
+  "fleetDisposition": [
+    { "Cluster Name": "gf-mgmt-01", "suggestedDomainRole": "MGMT", "Instance ID": "instance_1", "Domain ID": "mgmt_gf-mgmt-01", "Domain Type": "MGMT", "Phase": "1", "hosts": 4, "cores": 128, "memoryGb": 2048, "provisionedTb": 0, "poweredOnVms": 0 }
+  ],
+  "recoveryObjectives": { "rpoMinutes": 1440, "rtoMinutes": 1440, "retentionDays": 14, "preset": "STANDARD_OBJ" },
+  "configValuesStub": {
+    "nic_profile": "2_COLLAPSED",
+    "storage_protocol": "VSAN_ESA",
+    "storage_topology": "HCI",
+    "recovery_objectives": "{\"rpoMinutes\":1440,\"rtoMinutes\":1440,\"retentionDays\":14,\"preset\":\"STANDARD_OBJ\"}",
+    "customer_id": "Customer_Sample_GF"
+  },
+  "excluded": ["optimization", "sizer_worksheets", "readiness_asset_tables", "licensing_cores", "png_diagrams"]
+}

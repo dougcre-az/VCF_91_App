@@ -1,0 +1,58 @@
+{
+  "schema": "vcf-design-package/v1",
+  "meta": {
+    "customerId": "Customer_Sample_BF",
+    "archMode": "BROWNFIELD",
+    "siteTopology": "MULTI",
+    "instanceStrategy": "MULTI_INSTANCE",
+    "fleetDrPair": "YES",
+    "nicProfile": "4",
+    "storageTopology": "EXTERNAL",
+    "storageProtocol": "EXTERNAL",
+    "recoveryObjectivesPreset": "UNRESOLVED",
+    "recoveryObjectivesStructured": "",
+    "dictionaryVersion": "vcf-design-package-dictionary/v1",
+    "strictness": "lenient",
+    "note": "Brownfield pin with mixed dispositions + one UNRESOLVED recovery decision for importer integration tests."
+  },
+  "discoveredInventory": {
+    "source": "rvtools",
+    "totals": { "vms": 1200, "clusters": 12, "hosts": 96, "provisionedTb": 420.5, "poweredOnVms": 980 },
+    "missionCritical": { "vms": 44, "method": "high_value_first_wave", "confidence": "heuristic", "sampleNames": ["prod-erp-01", "prod-sql-02"] },
+    "infrastructureCandidates": { "vms": 31, "method": "infra_pattern_match", "sampleNames": ["vcsa-mgmt", "nsx-edge-01", "sddc-mgr"] }
+  },
+  "parentDecisions": [
+    { "Decision ID": "DEC-ARCH-001", "Context Key": "archMode", "Current Value": "BROWNFIELD", "Resolution Status": "RESOLVED", "Domain Scope": "FLEET", "Target Object ID": "", "Provenance": "USER_SELECTED" },
+    { "Decision ID": "DEC-FLEET-002", "Context Key": "hldInstanceStrategy", "Current Value": "MULTI_INSTANCE", "Resolution Status": "RESOLVED", "Domain Scope": "FLEET", "Target Object ID": "", "Provenance": "USER_SELECTED" },
+    { "Decision ID": "DEC-NET-006", "Context Key": "hldNicProfile", "Current Value": "4", "Resolution Status": "RESOLVED", "Domain Scope": "MGMT", "Target Object ID": "", "Provenance": "USER_SELECTED" },
+    { "Decision ID": "DEC-STG-001", "Context Key": "hldStorageTopology", "Current Value": "EXTERNAL", "Resolution Status": "RESOLVED", "Domain Scope": "MGMT", "Target Object ID": "", "Provenance": "USER_SELECTED" },
+    { "Decision ID": "DEC-PROT-002", "Context Key": "hldRecoveryObjectives", "Current Value": "UNRESOLVED", "Resolution Status": "UNRESOLVED", "Resolver Hint": "CUSTOMER", "Domain Scope": "FLEET", "Target Object ID": "", "Provenance": "DEFAULT" },
+    { "Decision ID": "DEC-NET-001", "Context Key": "networkingModel", "Current Value": "VPC", "Resolution Status": "RESOLVED", "Domain Scope": "MGMT", "Target Object ID": "", "Provenance": "USER_SELECTED" },
+    { "Decision ID": "DEC-NET-001", "Context Key": "networkingModel", "Current Value": "SEGMENT", "Resolution Status": "RESOLVED", "Domain Scope": "WLD", "Target Object ID": "WLD/wld_cluster_a", "Provenance": "USER_SELECTED" }
+  ],
+  "unresolvedDecisions": [
+    { "Decision ID": "DEC-PROT-002", "Context Key": "hldRecoveryObjectives", "Resolver Hint": "CUSTOMER", "Decision": "Recovery objectives" }
+  ],
+  "fleetDisposition": [
+    { "Cluster Name": "mgmt-primary", "suggestedDomainRole": "MGMT", "Instance ID": "instance_1", "Domain ID": "mgmt_mgmt-primary", "Domain Type": "MGMT", "Phase": "1", "hosts": 8, "cores": 256, "memoryGb": 4096, "provisionedTb": 12.2, "poweredOnVms": 40 },
+    { "Cluster Name": "mgmt-dr", "suggestedDomainRole": "MGMT", "Instance ID": "instance_2", "Domain ID": "mgmt_mgmt-dr", "Domain Type": "MGMT", "Phase": "1", "hosts": 8, "cores": 256, "memoryGb": 4096, "provisionedTb": 10.1, "poweredOnVms": 28 },
+    { "Cluster Name": "cluster-a", "suggestedDomainRole": "WLD", "Instance ID": "instance_1", "Domain ID": "wld_cluster_a", "Domain Type": "WLD", "Phase": "1", "hosts": 16, "cores": 512, "memoryGb": 8192, "provisionedTb": 180.4, "poweredOnVms": 420 },
+    { "Cluster Name": "legacy-vs8", "suggestedDomainRole": "RETIRE", "Instance ID": "instance_1", "Domain ID": "wld_legacy-vs8", "Domain Type": "RETIRE", "Phase": "2", "hosts": 6, "cores": 96, "memoryGb": 1536, "provisionedTb": 40, "poweredOnVms": 90, "Upgrade Disposition": "Retain on vSphere 8" }
+  ],
+  "decisionTargetOverrides": [
+    { "decisionId": "DEC-NET-001", "contextKey": "networkingModel", "targetObjectId": "WLD/wld_cluster_a", "value": "SEGMENT", "domainScope": "WLD" }
+  ],
+  "recoveryObjectives": null,
+  "configValuesStub": {
+    "nic_profile": "4_PLUS",
+    "storage_protocol": "EXTERNAL",
+    "storage_topology": "EXTERNAL",
+    "recovery_objectives": "",
+    "customer_id": "Customer_Sample_BF"
+  },
+  "filters": [
+    { "step": "exclude_optimization", "dropped": 0, "reason": "config-push scope excludes optimization" },
+    { "step": "applicable_design_ids", "dropped": 48, "reason": "trigger criteria + bucket scope filter" }
+  ],
+  "excluded": ["optimization", "sizer_worksheets", "readiness_asset_tables", "licensing_cores", "png_diagrams"]
+}
