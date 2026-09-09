@@ -780,6 +780,7 @@
         vNetwork: (rv.vNetwork || []).filter(keepHostOrVm),
         vDatastore: (rv.vDatastore || []).filter(keepHostOrVm),
         dvSwitch: (rv.dvSwitch || []).filter(keepHostOrVm),
+        vSwitch: (rv.vSwitch || []).filter(keepHostOrVm),
         vCD: (rv.vCD || []).filter(keepHostOrVm),
         vSnapshot: (rv.vSnapshot || []).filter(keepHostOrVm),
         vCluster: (rv.vCluster || []).filter(row => inClusters.has(getCol(row, ['name', 'cluster', 'clustername'])) || keepHostOrVm(row)),
@@ -924,6 +925,29 @@
         </span>
       );
     };
+
+    // Stable component (not recreated inside renderValueOfVcf) so currency inputs keep focus while typing.
+    const ValueMoneyField = ({ label, info, value, onChange, disabled = false, placeholder = '0', hint = null }) => (
+      <div className="flex flex-col gap-1 min-h-[6.25rem]">
+        <div className="flex items-start gap-1 min-h-[2.75rem]">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 leading-snug">{label}</span>
+          {info ? <SizerInfo text={info} /> : null}
+        </div>
+        <div className={`relative ${disabled ? 'opacity-50' : ''}`}>
+          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">$</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            disabled={disabled}
+            placeholder={placeholder}
+            className="w-full border border-slate-300 dark:border-slate-600 rounded pl-6 pr-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 disabled:cursor-not-allowed"
+            value={value}
+            onChange={(e) => onChange(e.target.value.replace(/[^0-9.,]/g, ''))}
+          />
+        </div>
+        <div className="text-[9px] text-slate-500 dark:text-slate-400 min-h-[1rem] leading-snug">{hint || '\u00a0'}</div>
+      </div>
+    );
 
     const SizerDocLink = ({ href, children }) => (
       <a className="sizer-doc-link" href={href} target="_blank" rel="noopener noreferrer">{children}</a>
@@ -9003,7 +9027,7 @@ const VCFApp = () => {
           });
       }, [rawRvData, hldStorageProto, gfStorageType, derivedAuto, derivedAvi, derivedHcx, hldEdgeStrategy, archSelectedCluster, fleetMgmtCluster, siteProfiles, hldIncAI, hldIncDR, hldIncSEC, hldIncDsm, manualVksScope]);
         
-      const emptyRvSheets = () => ({ vInfo: [], vHost: [], vHBA: [], vTools: [], vNetwork: [], vDatastore: [], dvSwitch: [], vCD: [], vSnapshot: [], vCluster: [], vMemory: [] });
+      const emptyRvSheets = () => ({ vInfo: [], vHost: [], vHBA: [], vTools: [], vNetwork: [], vDatastore: [], dvSwitch: [], vSwitch: [], vCD: [], vSnapshot: [], vCluster: [], vMemory: [] });
 
       const ingestWorkbookInto = (workbook, fileName, combinedRvData) => {
         const isCsv = String(fileName).toLowerCase().endsWith('.csv');
@@ -9347,12 +9371,36 @@ if (rvData.vHBA) {
             const clusterName = getCol(dvs, ['cluster']) || 'N/A';
             const hostName = getCol(dvs, ['host', 'hostmembers']) || 'Multiple';
             if (!dvsName) return;
+            const switchType = String(getCol(dvs, ['type', 'switchtype', 'switch type']) || '').toLowerCase();
             const dvsVersion = String(getCol(dvs, ['version', 'productinfoversion']));
+            // Never treat vSphere Standard Switch (vSS) as a ready vDS — VCF 9.x requires distributed switches.
+            if (switchType.includes('standard') || /\bvss\b/.test(switchType) || /^vswitch/i.test(String(dvsName))) {
+              dvsRes.push({ id: genId(), name: dvsName, cluster: clusterName, host: hostName, details: `vSS / Standard Switch — not upgradeable to VCF 9.x (migrate to vDS 7+)`, status: 'red' });
+              return;
+            }
             let status = 'green';
             const match = dvsVersion.match(/(\d+)\./);
             if (match && parseInt(match[1], 10) < 7) status = 'red'; 
             else if (!match) status = 'yellow';
             dvsRes.push({ id: genId(), name: dvsName, cluster: clusterName, host: hostName, details: `vDS Version: ${dvsVersion || 'Unknown'}`, status: status });
+          });
+        }
+
+        // RVTools vSwitch tab = vSphere Standard Switches — hard blockers for VCF 9.x
+        if (rvData.vSwitch) {
+          rvData.vSwitch.forEach(vs => {
+            const vsName = getCol(vs, ['name', 'switch', 'vswitch']);
+            const clusterName = getCol(vs, ['cluster']) || 'N/A';
+            const hostName = getCol(vs, ['host', 'hostname', 'hostmembers']) || 'N/A';
+            if (!vsName) return;
+            dvsRes.push({
+              id: genId(),
+              name: vsName,
+              cluster: clusterName,
+              host: hostName,
+              details: 'vSphere Standard Switch (vSS) — VCF 9.x requires vDS; migrate networking to a Distributed Switch before upgrade',
+              status: 'red',
+            });
           });
         }
 
@@ -9767,6 +9815,18 @@ const architectureMath = useMemo(() => {
            }
          }
          
+         // When Fleet DR / multi-instance / multi-fleet: size every management-domain (and fleet) catalog
+         // row for each VCF instance so Placement shows enough CPU/RAM/storage for both sites/fleets.
+         const gfInstances = Math.max(2, parseInt(gfInstanceCount, 10) || 2);
+         const bfInstances = Math.max(2, 1 + (multiInstanceClusters?.length || 0));
+         const multiInstanceSizing = hldInstanceStrategy === 'MULTI_INSTANCE' || hldDrFleetPair;
+         const mgmtInstanceCount = multiInstanceSizing
+           ? (archMode === 'GREENFIELD' ? gfInstances : bfInstances)
+           : 1;
+         const fleetPayloadCount = architectDecisionInputs?.hldFleetBoundary === 'MULTIPLE_FLEETS'
+           ? Math.max(2, parseInt(fleetCount, 10) || 2)
+           : (hldDrFleetPair ? mgmtInstanceCount : 1);
+         
          Object.entries(sizingSelections).forEach(([compName, config]) => {
             if (!config?.enabled) return;
             
@@ -9825,9 +9885,16 @@ const architectureMath = useMemo(() => {
 
             if (bestRow) {
                 let multiplier = 1;
-                if (bestRow.group.toLowerCase().includes('workload domain')) {
+                const groupL = String(bestRow.group || '').toLowerCase();
+                if (groupL.includes('workload domain')) {
                     // 0 = consolidated (no dedicated WLD payload). Do not coerce 0 → 1.
                     multiplier = Math.max(0, parseInt(wlDomainCount, 10) || 0);
+                } else if (groupL.includes('fleet')) {
+                    // Ops / Automation authority: × fleets, or × DR/instances when sizing both sites together.
+                    multiplier = Math.max(1, fleetPayloadCount);
+                } else if (multiInstanceSizing) {
+                    // Management domain / services / optional add-ons: one payload per VCF instance.
+                    multiplier = Math.max(1, mgmtInstanceCount);
                 }
                 const addVcpu = (bestRow.vcpu || 0) * multiplier;
                 const addRam = (bestRow.ram || 0) * multiplier;
@@ -10098,8 +10165,11 @@ const architectureMath = useMemo(() => {
            missingSimple,
            msFindings,
            msPairInverted: !!msPair?.inverted,
+           mgmtInstanceCount,
+           fleetPayloadCount,
+           multiInstanceSizing,
          };
-      }, [rawRvData, sizingSelections, normalizedSizing, displayNvmeMinGb, optTierRatio, wlDomainCount, archMode, gfHosts, gfCores, gfMemGB, gfCpuRatio, gfMemRatio, gfStorageType, gfNics, fleetMgmtCluster, designIdLookup_]);
+      }, [rawRvData, sizingSelections, normalizedSizing, displayNvmeMinGb, optTierRatio, wlDomainCount, archMode, gfHosts, gfCores, gfMemGB, gfCpuRatio, gfMemRatio, gfStorageType, gfNics, fleetMgmtCluster, designIdLookup_, hldInstanceStrategy, hldDrFleetPair, gfInstanceCount, multiInstanceClusters, architectDecisionInputs.hldFleetBoundary, fleetCount]);
 
       const recaptureMath = useMemo(() => {
         if (!rawRvData || !rawRvData.vHost || !rawRvData.vInfo) return [];
@@ -10271,7 +10341,7 @@ const architectureMath = useMemo(() => {
           ["VM Active Snapshots", getC(readinessResults.snapshots).green, getC(readinessResults.snapshots).yellow, getC(readinessResults.snapshots).red, readinessResults.snapshots.length],
           ["VM Connected CD/DVDs", getC(readinessResults.cdDrives).green, getC(readinessResults.cdDrives).yellow, getC(readinessResults.cdDrives).red, readinessResults.cdDrives.length],
           ["Datastores (VMFS)", getC(readinessResults.datastores).green, getC(readinessResults.datastores).yellow, getC(readinessResults.datastores).red, readinessResults.datastores.length],
-          ["Distributed Switches", getC(readinessResults.dvSwitches).green, getC(readinessResults.dvSwitches).yellow, getC(readinessResults.dvSwitches).red, readinessResults.dvSwitches.length],
+          ["Switches (vDS / vSS)", getC(readinessResults.dvSwitches).green, getC(readinessResults.dvSwitches).yellow, getC(readinessResults.dvSwitches).red, readinessResults.dvSwitches.length],
           ["HBA(s)", getC(readinessResults.ioDevices).green, getC(readinessResults.ioDevices).yellow, getC(readinessResults.ioDevices).red, readinessResults.ioDevices.length],
           [],
           ["VCF Core Licensing Metric", totalVcfCores],
@@ -10402,7 +10472,7 @@ const architectureMath = useMemo(() => {
         addSheet(readinessResults.snapshots, "VM Snapshots");
         addSheet(readinessResults.cdDrives, "VM CD-DVDs");
         addSheet(readinessResults.datastores, "Datastores");
-        addSheet(readinessResults.dvSwitches, "Distributed Switches");
+        addSheet(readinessResults.dvSwitches, "Switches vDS vSS");
         addSheet(readinessResults.ioDevices, "HBA(s)");
         
         XLSX.writeFile(wb, "VCF_Readiness_Report.xlsx");
@@ -11572,7 +11642,7 @@ const architectureMath = useMemo(() => {
                            { id: 'snapshots', label: `VM Snapshots` },
                            { id: 'cdDrives', label: `VM CD / Floppy` },
                            { id: 'datastores', label: `Datastores` },
-                           { id: 'dvSwitches', label: `vDS Switches` },
+                           { id: 'dvSwitches', label: `Switches` },
                            { id: 'ioDevices', label: `HBA(s)` }
                         ].map(tab => (
                            <button key={tab.id} onClick={() => { setReadinessTab(tab.id); setTablePage(0); }} className={`py-2 px-4 font-semibold text-sm rounded transition-colors duration-200 whitespace-nowrap inline-flex items-center gap-2 ${readinessTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 hover:bg-slate-100'}`}>
@@ -11604,7 +11674,7 @@ const architectureMath = useMemo(() => {
                                  {renderSummaryCard("VM Snapshots", readinessResults.snapshots)}
                                  {renderSummaryCard("VM CD/DVDs", readinessResults.cdDrives)}
                                  {renderSummaryCard("Datastores (VMFS)", readinessResults.datastores)}
-                                 {renderSummaryCard("Distributed Switches", readinessResults.dvSwitches)}
+                                 {renderSummaryCard("Switches (vDS / vSS)", readinessResults.dvSwitches)}
                           {renderSummaryCard("HBA(s)", readinessResults.ioDevices)}
                                  <div className="bg-white dark:bg-slate-900 p-4 rounded border border-slate-200 dark:border-slate-700 shadow-sm">
                                     <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Derived VCF Cores</div>
@@ -11630,7 +11700,7 @@ const architectureMath = useMemo(() => {
                         {readinessTab === 'snapshots' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Active VM Snapshots (&gt; 7 Days is Critical)</h3>{renderTable(readinessResults.snapshots, ['Asset Name', 'Cluster', 'Host(s)', 'Snapshot Details', 'Readiness'], 'snapshots')}</div>}
                         {readinessTab === 'cdDrives' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Connected CD/DVD and Floppy Drives (vMotion Blocker)</h3>{renderTable(readinessResults.cdDrives, ['Asset Name', 'Cluster', 'Host(s)', 'Drive Details', 'Readiness'], 'cdDrives')}</div>}
                         {readinessTab === 'datastores' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Datastore Configuration (VMFS 5/6 Supported, Min 20% Free)</h3>{renderTable(readinessResults.datastores, ['Asset Name', 'Cluster', 'Host(s)', 'Configuration Details', 'Readiness'], 'datastores')}</div>}
-                        {readinessTab === 'dvSwitches' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Distributed Switches (Min vDS 7.x)</h3>{renderTable(readinessResults.dvSwitches, ['Asset Name', 'Cluster', 'Host(s)', 'Switch Version', 'Readiness'], 'dvSwitches')}</div>}
+                        {readinessTab === 'dvSwitches' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Switches — vDS ready / vSS blockers</h3><p className="text-xs text-slate-500 dark:text-slate-400 mb-3">VCF 9.x requires <span className="font-bold">Distributed Switches (vDS 7.x+)</span>. <span className="font-bold text-red-700 dark:text-red-300">vSphere Standard Switches (vSS)</span> from the RVTools <span className="font-mono">vSwitch</span> tab are hard blockers — they cannot be upgraded in place; migrate networking to a vDS before the VCF upgrade.</p>{renderTable(readinessResults.dvSwitches, ['Asset Name', 'Cluster', 'Host(s)', 'Switch Version', 'Readiness'], 'dvSwitches')}</div>}
                         {readinessTab === 'ioDevices' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Host Bus Adapters (vHBA)</h3>{renderTable(readinessResults.ioDevices, ['Asset Name', 'Cluster', 'Host(s)', 'HBA Model', 'Readiness'], 'ioDevices')}</div>}
                      </div>
                   </div>
@@ -11674,7 +11744,7 @@ const architectureMath = useMemo(() => {
              addInfraBlocker(readinessResults.cpus, 'Hardware / CPU');
              addInfraBlocker(readinessResults.ioDevices, 'Storage I/O');
              addInfraBlocker(readinessResults.datastores, 'Datastore');
-             addInfraBlocker(readinessResults.dvSwitches, 'Network vDS');
+             addInfraBlocker(readinessResults.dvSwitches, 'Network switches (vDS/vSS)');
              addInfraBlocker(readinessResults.hostConfig, 'Host Config');
              addInfraBlocker(readinessResults.clusters, 'DRS Settings');
              addInfraBlocker(readinessResults.software, 'VCF Mgmt Software');
@@ -13355,6 +13425,11 @@ const architectureMath = useMemo(() => {
                                        : 'Full HA (4+ hosts / vSAN brownfield)'}
                                    </span>
                                  )}
+                                 {architectureMath?.multiInstanceSizing && architectureMath.mgmtInstanceCount > 1 && (
+                                   <span className="ml-2 normal-case tracking-normal font-bold opacity-90">
+                                     · ×{architectureMath.mgmtInstanceCount} VCF instances{hldDrFleetPair ? ' (Fleet DR)' : ''}
+                                   </span>
+                                 )}
                               </h4>
                               <div className="flex gap-8 mt-2">
                                  <div>
@@ -13424,6 +13499,7 @@ const architectureMath = useMemo(() => {
                                 <td className="py-1.5 pr-3 font-bold">{row.selection}</td>
                                 <td className="py-1.5 pr-3">
                                   {row.resolvedAs}
+                                  {row.multiplier > 1 && <div className="text-[9px] text-violet-700 dark:text-violet-300 font-bold normal-case tracking-normal mt-0.5">×{row.multiplier} instances (included in totals)</div>}
                                   {row.note && <div className="text-[9px] text-blue-700 dark:text-blue-300 font-bold normal-case tracking-normal mt-0.5">{row.note}</div>}
                                 </td>
                                 <td className="py-1.5 pr-3 st-mono">{row.nodes || '—'}</td>
@@ -14829,9 +14905,9 @@ const architectureMath = useMemo(() => {
           automation: { 3: 40, 5: 48, 7: 52 },
         };
         const vvmDirectionalPct = {
-          hypervisor: { 3: 26, 5: 32, 7: 36, source: 'VVM/PCMO compute category (MAVERIK-shaped 5-yr, haircut to 3/7)' },
-          storage: { 3: 55, 5: 65, 7: 70, source: 'VVM/PCMO storage category 64.5% (MAVERIK-shaped; $2/GB placeholder BOM)' },
-          networking: { 3: 35, 5: 41, 7: 45, source: 'VVM/PCMO network category 40.7% (MAVERIK-shaped 5-yr)' },
+          hypervisor: { 3: 26, 5: 32, 7: 36, source: 'VVM/PCMO compute category (industry-shaped 5-yr, haircut to 3/7)' },
+          storage: { 3: 55, 5: 65, 7: 70, source: 'VVM/PCMO storage category 64.5% (industry-shaped; $2/GB placeholder BOM)' },
+          networking: { 3: 35, 5: 41, 7: 45, source: 'VVM/PCMO network category 40.7% (industry-shaped 5-yr)' },
         };
         const normKey = (s) => String(s || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '');
         const sheetField = (row, names) => {
@@ -14852,27 +14928,6 @@ const architectureMath = useMemo(() => {
           return Number.isFinite(n) && n > 0 ? n : 0;
         };
         const fmtUsd = (n) => (n > 0 ? n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }) : '—');
-        const MoneyField = ({ label, info, value, onChange, disabled = false, placeholder = '0', hint = null }) => (
-          <div className="flex flex-col gap-1 min-h-[6.25rem]">
-            <div className="flex items-start gap-1 min-h-[2.75rem]">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 leading-snug">{label}</span>
-              {info ? <SizerInfo text={info} /> : null}
-            </div>
-            <div className={`relative ${disabled ? 'opacity-50' : ''}`}>
-              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">$</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                disabled={disabled}
-                placeholder={placeholder}
-                className="w-full border border-slate-300 dark:border-slate-600 rounded pl-6 pr-2 py-1.5 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 disabled:cursor-not-allowed"
-                value={value}
-                onChange={(e) => onChange(e.target.value.replace(/[^0-9.,]/g, ''))}
-              />
-            </div>
-            <div className="text-[9px] text-slate-500 dark:text-slate-400 min-h-[1rem] leading-snug">{hint || '\u00a0'}</div>
-          </div>
-        );
         const sheetRows = vcgData.valueOfVcf || vcgData['Value of VCF'] || vcgData.tcoAverages || [];
         const avgIndex = {};
         sheetRows.forEach((row) => {
@@ -15026,15 +15081,15 @@ const architectureMath = useMemo(() => {
         const firewallSpendOn = laneOn('firewall') && parseSpend(valueLaneSpend.firewall) > 0;
         const lbSpendOn = laneOn('loadbalancer') && parseSpend(valueLaneSpend.loadbalancer) > 0;
         const impactDrivers = [
-          { rank: '1', filled: valueLaborOn && vms > 0, title: 'Labor / VCF operating model', template: `RVTools ${vms.toLocaleString()} VMs · VVM 48–50%`, why: 'Where VCF excels. FTE productivity from this estate × VVM ratios — not the empty Labor F14 placeholder in Get Started.' },
-          { rank: '1', filled: valueBizOn && vms > 0, title: 'Business impact (downtime)', template: 'RVTools × 99.7% SLA × Live Recovery', why: 'Internal downtime avoided from estate FTEs. Revenue/breach $ stays a talking point unless the customer gives a number.' },
-          { rank: '2', filled: currentVmware > 0, title: 'Current VMware annual', template: 'Software F5', why: 'Blank template starts at $0. Until this is filled, VCF subscription is all-new spend and VVM ROI stays n/a or negative.' },
-          { rank: '2', filled: vcfAnnual > 0, title: 'VCF annual subscription', template: 'ROI Results E37', why: 'Investment hurdle. Template ROI% = (current TCO − future TCO) / VCF software. Empty years = no outcome.' },
-          { rank: '3', filled: vms > 0 && hosts > 0, title: 'VMs and hosts', template: 'Initial Screens C17–C18', why: 'Filled from RVTools when you upload. They scale compute, facilities, labor, and leave-cost.' },
-          { rank: '3', filled: storageSpendOn || (laneOn('storage') && vsanInDesign), title: 'Array / vSAN takeout', template: 'C19 GB/VM · Storage F13 $2/GB · vSAN 0→100%', why: 'Largest hard-dollar 3-tier lever. Enter their Nimble/NetApp spend or use the RVTools GB estimate on the storage lane.' },
-          { rank: '3', filled: leaveLanes.length > 0 && valueCountSwitchCost, title: 'Leave-vSphere competitor', template: 'Nutanix $38,657/node · $920/VM', why: 'Stay-on-VMware ROI is avoided new nodes + migrate, counted once. License-only bake-offs skip this and go negative.' },
-          { rank: '4', filled: firewallSpendOn || (laneOn('firewall') && advancedSec), title: 'vDefend / HW firewall', template: 'Initial D34 · PA-5260 $113,400 · 70% retire', why: 'Network firewall block is hidden until vDefend is Yes. Needs an appliance invoice to matter.' },
-          { rank: '4', filled: lbSpendOn || (laneOn('loadbalancer') && derivedAvi), title: 'Avi / HW load balancer', template: 'Initial D33 · F5 $87,000 · 100% retire', why: 'LB takeout is hidden until Avi is Yes. Check the lane and enter F5/NetScaler spend.' },
+          { rank: '1', filled: valueLaborOn && vms > 0, title: 'Labor / VCF operating model', source: `RVTools · ${vms.toLocaleString()} VMs`, why: 'Where VCF excels. FTE productivity from this estate × published VVM ratios — not a blank labor placeholder.' },
+          { rank: '1', filled: valueBizOn && vms > 0, title: 'Business impact (downtime)', source: 'RVTools × SLA × Live Recovery', why: 'Internal downtime avoided from estate FTEs. Revenue/breach $ stays a talking point unless the customer gives a number.' },
+          { rank: '2', filled: currentVmware > 0, title: 'Current VMware annual', source: 'Customer invoice / renewal', why: 'Until this is filled, VCF subscription looks like all-new spend and directional ROI stays n/a or negative.' },
+          { rank: '2', filled: vcfAnnual > 0, title: 'VCF annual subscription', source: 'Customer quote / SKU', why: 'Investment hurdle. ROI story = (current TCO − future TCO) vs VCF software. Empty years = no outcome.' },
+          { rank: '3', filled: vms > 0 && hosts > 0, title: 'VMs and hosts', source: 'RVTools upload', why: 'Filled from RVTools when you upload. They scale compute, facilities, labor, and leave-cost.' },
+          { rank: '3', filled: storageSpendOn || (laneOn('storage') && vsanInDesign), title: 'Array / vSAN takeout', source: 'Customer array spend or RVTools GB', why: 'Largest hard-dollar 3-tier lever. Enter their Nimble/NetApp spend or use the RVTools GB estimate on the storage lane.' },
+          { rank: '3', filled: leaveLanes.length > 0 && valueCountSwitchCost, title: 'Leave-vSphere competitor', source: 'VVM leave units · customer quote', why: 'Stay-on-VMware ROI is avoided new nodes + migrate, counted once. License-only bake-offs skip this and go negative.' },
+          { rank: '4', filled: firewallSpendOn || (laneOn('firewall') && advancedSec), title: 'vDefend / HW firewall', source: 'Customer firewall invoice', why: 'Needs an appliance invoice (or vDefend in design) to matter as takeout.' },
+          { rank: '4', filled: lbSpendOn || (laneOn('loadbalancer') && derivedAvi), title: 'Avi / HW load balancer', source: 'Customer ADC invoice (e.g. F5)', why: 'LB takeout needs Avi in design (or the lane checked) plus F5/NetScaler spend.' },
         ];
         const impactMissing = impactDrivers.filter((d) => !d.filled);
         const setComp = (id, value) => {
@@ -15081,7 +15136,7 @@ const architectureMath = useMemo(() => {
               <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
                 <div className="ui-card p-4"><div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Estate (RVTools)</div><div className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{vms.toLocaleString()} <span className="text-sm font-bold text-slate-500">VMs</span></div><div className="text-[10px] text-slate-500 dark:text-slate-400">{hosts.toLocaleString()} hosts · {poweredOn.toLocaleString()} on · {totalTb > 0 ? `${totalTb.toFixed(1)} TiB` : `${totalVcfCores.toLocaleString()} cores`}{gbPerVm > 0 ? ` · ${Math.round(gbPerVm)} GB/VM` : ''}{k8sGuests ? ` · ${k8sGuests} K8s` : ''}{hostsSaved ? ` · −${hostsSaved} hosts` : ''}</div></div>
                 <div className="ui-card p-4">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1">Horizon<SizerInfo text="Planning haircut: conservative directional takeout % from industry / sheet averages — use for customer conversations before invoices. VVM directional: MAVERIK-shaped category takeouts (e.g. compute ~32%, storage ~65%, network ~41% at 5 yr) plus leave-cost units ($38,657/node, $920/VM off vSphere). Haircut is safer for early planning; VVM is the higher directional story — never a quote." /></div>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1">Horizon<SizerInfo text="Planning haircut: conservative directional takeout % from industry / sheet averages — use for customer conversations before invoices. VVM directional: published category takeouts (e.g. compute ~32%, storage ~65%, network ~41% at 5 yr) plus leave-cost units ($38,657/node, $920/VM off vSphere). Haircut is safer for early planning; VVM is the higher directional story — never a quote. Always prefer the customer’s own invoices." /></div>
                   <div className="mt-2 flex gap-1">{[3,5,7].map(y => <button key={y} type="button" onClick={() => setValueHorizon(y)} className={`px-3 py-1.5 text-xs font-black rounded ${valueHorizon === y ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>{y} yr</button>)}</div>
                   <div className="mt-2 flex gap-1">{[{ id: 'PLANNING', label: 'Planning haircut' }, { id: 'VVM', label: 'VVM directional' }].map(opt => <button key={opt.id} type="button" onClick={() => setValuePctSource(opt.id)} className={`px-2 py-1 text-[10px] font-black rounded ${valuePctSource === opt.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>{opt.label}</button>)}</div>
                 </div>
@@ -15119,7 +15174,7 @@ const architectureMath = useMemo(() => {
                         <th className="py-1 pr-3">Rank</th>
                         <th className="py-1 pr-3">Status</th>
                         <th className="py-1 pr-3">Data point</th>
-                        <th className="py-1 pr-3">Template</th>
+                        <th className="py-1 pr-3">Where to get it</th>
                         <th className="py-1">Why it moves the outcome</th>
                       </tr>
                     </thead>
@@ -15129,7 +15184,7 @@ const architectureMath = useMemo(() => {
                           <td className="py-2 pr-3 font-black">{d.rank}</td>
                           <td className="py-2 pr-3 font-black uppercase tracking-widest text-[9px]">{d.filled ? <span className="text-emerald-700 dark:text-emerald-300">Filled</span> : <span className="text-amber-700 dark:text-amber-300">Needed</span>}</td>
                           <td className="py-2 pr-3 font-bold text-slate-800 dark:text-slate-100">{d.title}</td>
-                          <td className="py-2 pr-3 whitespace-nowrap">{d.template}</td>
+                          <td className="py-2 pr-3 whitespace-nowrap">{d.source}</td>
                           <td className="py-2 leading-relaxed">{d.why}</td>
                         </tr>
                       ))}
@@ -15150,21 +15205,21 @@ const architectureMath = useMemo(() => {
                   </label>
                 </div>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 items-stretch">
-                  <MoneyField
+                  <ValueMoneyField
                     label="VCF annual subscription"
                     info="Customer’s planned VCF subscription spend per year. Net-new hurdle = (this − current VMware annual) × horizon."
                     value={valueVcfAnnual}
                     onChange={setValueVcfAnnual}
                     placeholder="0"
                   />
-                  <MoneyField
+                  <ValueMoneyField
                     label="Current VMware annual"
                     info="Existing VMware software spend that VCF replaces or absorbs. Subtracted from VCF subscription when computing the net-new hurdle."
                     value={valueCurrentVmware}
                     onChange={setValueCurrentVmware}
                     placeholder="0"
                   />
-                  <MoneyField
+                  <ValueMoneyField
                     label="New-node + support override"
                     info={`When a leave-vSphere lane is checked (e.g. AHV or Nutanix HCI), avoided hardware cost defaults to RVTools host count × $38,657/node × (1 + 15% support × horizon) from VVM/PCMO units. Override with a customer quote. Est: ${switchServersEst > 0 ? fmtUsd(switchServersEst) : 'n/a'}.`}
                     value={valueSwitchServers}
@@ -15173,7 +15228,7 @@ const architectureMath = useMemo(() => {
                     placeholder={anyNewNodes && switchServersEst > 0 ? String(Math.round(switchServersEst)) : 'n/a'}
                     hint={anyNewNodes && valueCountSwitchCost && !parseSpend(valueSwitchServers) && switchServersEst > 0 ? `Using est ${fmtUsd(switchServersEst)}` : (anyNewNodes ? 'Hosts × $38,657 × support' : 'No leave+new-nodes vendor')}
                   />
-                  <MoneyField
+                  <ValueMoneyField
                     label="VM migrate override"
                     info={`Avoided migration cost for leaving vSphere: powered-on VMs × max $/VM from checked leave lanes ($920 off vSphere, $1,672 OpenShift Virt). Counted once across lanes. Est: ${switchMigEst > 0 ? fmtUsd(switchMigEst) : 'n/a'}.`}
                     value={valueSwitchMigration}
@@ -15211,7 +15266,7 @@ const architectureMath = useMemo(() => {
                   </div>
                 </div>
                 {valuePctSource === 'VVM' && (
-                  <p className="text-[10px] text-amber-800 dark:text-amber-200">VVM directional uses the MAVERIK-shaped 5-year category takeouts (compute 32%, storage 65%, network 41%). Leave-cost units are from that file: $38,657/node, $920/VM off vSphere, $1,672/VM OpenShift Virt. Do not present them as a quote.</p>
+                  <p className="text-[10px] text-amber-800 dark:text-amber-200">VVM directional uses published 5-year category takeouts (compute 32%, storage 65%, network 41%). Leave-cost units: $38,657/node, $920/VM off vSphere, $1,672/VM OpenShift Virt. Prefer the customer’s invoices — do not present these as a quote.</p>
                 )}
               </div>
 
