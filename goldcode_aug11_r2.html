@@ -9727,10 +9727,17 @@ const architectureMath = useMemo(() => {
          const resolvedComponents = [];
          const missingSimple = [];
          const hostsParsed = parseInt(gfHosts, 10);
-         const hostsForSimple = Number.isFinite(hostsParsed) && hostsParsed > 0 ? hostsParsed : null;
-         // Simple catalog rows ONLY for greenfield 2-host (global) or 3-host (NSX Manager only). ≥4 = Full HA always.
-         let payloadMode = archMode === 'BROWNFIELD' ? 'FULL_HA' : 'FULL_HA';
-         if (archMode === 'GREENFIELD' && hostsForSimple != null) {
+         let hostsForSimple = Number.isFinite(hostsParsed) && hostsParsed > 0 ? hostsParsed : null;
+         // Brownfield + External (NFS/FC): Simple/Mixed bands follow the selected mgmt cluster host count (2/3 OK).
+         if (archMode === 'BROWNFIELD' && gfStorageType === 'EXTERNAL' && fleetMgmtCluster && rawRvData?.vHost) {
+            const mgmtHostCount = rawRvData.vHost.filter(h => getCol(h, ['cluster']) === fleetMgmtCluster).length;
+            if (mgmtHostCount > 0) hostsForSimple = mgmtHostCount;
+         }
+         // Simple catalog rows for ≤2 hosts (global) or 3-host (NSX Manager only). ≥4 = Full HA.
+         // Greenfield always; brownfield only when Mgmt Storage is External (NFS/FC).
+         let payloadMode = 'FULL_HA';
+         const allowSimpleBands = archMode === 'GREENFIELD' || (archMode === 'BROWNFIELD' && gfStorageType === 'EXTERNAL');
+         if (allowSimpleBands && hostsForSimple != null) {
             if (hostsForSimple <= 2) payloadMode = 'GLOBAL_SIMPLE';
             else if (hostsForSimple === 3) payloadMode = 'MIXED_SIMPLE_NSX';
             else payloadMode = 'FULL_HA';
@@ -9773,7 +9780,7 @@ const architectureMath = useMemo(() => {
               targetCompName = bestRow.component;
               resolveNote = msOverride.note;
             } else {
-              const wantSimple = archMode === 'GREENFIELD' && hostsForSimple != null && (
+              const wantSimple = allowSimpleBands && hostsForSimple != null && (
                 hostsForSimple <= 2
                 || (hostsForSimple === 3 && compName.toLowerCase().includes('nsx manager'))
               );
@@ -9790,7 +9797,7 @@ const architectureMath = useMemo(() => {
                   targetCompName = compName;
                 }
               } else {
-                // Full HA / brownfield / 4+ hosts — never pick Simple sibling or Size=Simple rows
+                // Full HA / vSAN brownfield / 4+ hosts — never pick Simple sibling or Size=Simple rows
                 compRows = findFullRowsForComponent_(normalizedSizing, compName);
                 if (compRows.length === 0) {
                   compRows = normalizedSizing.filter(r => r.component === compName && !isSimpleSizingRow_(r));
@@ -9903,6 +9910,9 @@ const architectureMath = useMemo(() => {
                  const avgHostMhz = hosts.length > 0 ? totalMhz / hosts.length : 2000 * 32;
                  const avgMhzPerCore = totalCores > 0 ? totalMhz / totalCores : 2000;
                  const avgNics = hosts.length > 0 ? Math.floor(totalNics / hosts.length) : 2;
+                 // External NFS/FC: 2-node Global Simple and 3-node Mixed are valid. vSAN brownfield keeps a 4-node Full-HA floor.
+                 const minHostsRequired = gfStorageType === 'EXTERNAL' ? 2 : 4;
+                 const n1UsableHostSlots = Math.max(1, minHostsRequired - 1);
 
                  let networkRec = '';
                  let networkDetails = '';
@@ -9919,10 +9929,11 @@ const architectureMath = useMemo(() => {
 
                  const memPerAddedHost = n > 0 ? (avgHostMem + Math.min(n, avgHostMem * r)) : avgHostMem;
 
-                 if (hosts.length < 4) {
-                     let usableCoresTest = avgHostCores * 3; 
-                     let usableMemTest = avgHostMem * 3;
-                     let hostsNeeded = 4;
+                 if (hosts.length < minHostsRequired) {
+                     // Plan growth to minHosts, then size N-1 usable slots (minHosts-1) for the mgmt payload (provisioned vCPU vs cores; full RAM).
+                     let usableCoresTest = avgHostCores * n1UsableHostSlots;
+                     let usableMemTest = avgHostMem * n1UsableHostSlots;
+                     let hostsNeeded = minHostsRequired;
                      
                      if (targetVcpu > usableCoresTest || targetRam > usableMemTest) {
                          let extraForCpu = Math.ceil(Math.max(0, targetVcpu - usableCoresTest) / avgHostCores);
@@ -9930,10 +9941,13 @@ const architectureMath = useMemo(() => {
                          hostsNeeded += Math.max(extraForCpu, extraForMem);
                      }
                      let hostsToAdd = hostsNeeded - hosts.length;
+                     const storageHint = gfStorageType === 'EXTERNAL'
+                       ? 'External (NFS/FC) allows 2-node Global Simple or 3-node Mixed designs'
+                       : 'vSAN management-domain candidates need 4 hosts for Full HA';
 
                      clusterEvaluations.push({ 
                         cluster: cName, status: 'red', type: 'Too Small', avgNics, networkRec, networkDetails,
-                        msg: `Currently ${hosts.length} host(s). VCF requires a minimum of 4. Based on its capacity profile (${Math.round(avgHostCores)} Cores, ${Math.round(avgHostMem)}GB RAM avg), you must add ${hostsToAdd} identical host(s) to meet both the 4-node minimum AND the N-1 payload requirement.`
+                        msg: `Currently ${hosts.length} host(s). ${storageHint}. Based on its capacity profile (${Math.round(avgHostCores)} Cores, ${Math.round(avgHostMem)}GB RAM avg), add ${hostsToAdd} identical host(s) to meet the ${minHostsRequired}-node minimum and N-1 payload.`
                      });
                      return;
                  }
@@ -9979,15 +9993,17 @@ const architectureMath = useMemo(() => {
              const cpuRatio = parseFloat(gfCpuRatio) || 1;
              const memRatio = parseFloat(gfMemRatio) || 1;
 
-             const threadsPerHost = cores * 2;
-             const hypervisorOverhead = gfStorageType === 'VSAN' ? 0.80 : 0.90;
-             const availableThreadsPerHost = threadsPerHost * hypervisorOverhead;
-             const availableMemPerHost = memGB * hypervisorOverhead;
+             // Align with VCF 9.1 Planning & Preparation workbook (Management Domain Sizing):
+             // usable vCPU = (N-1) × physical cores × CPU oversub  (no HT multiplier)
+             // usable RAM  = (N-1) × host RAM × mem oversub
+             // Host/Ops Reserve % in the workbook applies to storage only, not CPU/RAM capacity.
+             const availableCoresPerHost = cores;
+             const availableMemPerHost = memGB;
 
-             const usablePThreads = hosts > 0 ? (hosts - 1) * availableThreadsPerHost : 0;
+             const usablePCores = hosts > 0 ? (hosts - 1) * availableCoresPerHost : 0;
              const usablePMemGB = hosts > 0 ? (hosts - 1) * availableMemPerHost : 0;
 
-             const usableVcpus = Math.floor(usablePThreads * cpuRatio);
+             const usableVcpus = Math.floor(usablePCores * cpuRatio);
              const usableVMemGB = Math.floor(usablePMemGB * memRatio);
 
              const activeNvme = Math.min(n, memGB * r);
@@ -9999,7 +10015,7 @@ const architectureMath = useMemo(() => {
              const cpuPct = usableVcpus > 0 ? (targetVcpu / usableVcpus) * 100 : 0;
              const memPct = effectiveMemCapacity > 0 ? (targetRam / effectiveMemCapacity) * 100 : 0;
              
-             gfCapacity = { usableVcpus, effectiveMemCapacity, cpuPct, memPct };
+             gfCapacity = { usableVcpus, effectiveMemCapacity, cpuPct, memPct, method: 'PNP_CORE_N1' };
 
              let status = 'green';
              let type = 'Prime Candidate';
@@ -10043,8 +10059,8 @@ const architectureMath = useMemo(() => {
                  status = 'red';
                  type = 'CPU Bottleneck';
                  let deficitVcpu = Math.max(0, targetVcpu - usableVcpus);
-                 let hostsToAdd = Math.ceil(deficitVcpu / (availableThreadsPerHost * cpuRatio));
-                 msg = `CPU limits exceeded. Needs ${Math.ceil(targetVcpu)} vCPUs, but N-1 only provides ${usableVcpus} vCPUs (at ${cpuRatio}:1 ratio w/ HT). Increase Cores/Host, Ratio, or add ${hostsToAdd} more host(s).`;
+                 let hostsToAdd = Math.ceil(deficitVcpu / (availableCoresPerHost * cpuRatio));
+                 msg = `CPU limits exceeded. Needs ${Math.ceil(targetVcpu)} vCPUs, but N-1 only provides ${usableVcpus} vCPUs (${cpuRatio}:1 vs physical cores — VCF PnP workbook method). Increase Cores/Host, Ratio, or add ${hostsToAdd} more host(s).`;
              } else if (targetRam > usableVMemGB) {
                  if (n > 0 && targetRam <= usableTieredVMemGB) {
                      status = 'blue';
@@ -10060,7 +10076,7 @@ const architectureMath = useMemo(() => {
                      msg = `Memory limits exceeded. Needs ${Math.ceil(targetRam)}GB RAM, but N-1 only provides ${effectiveCapacity}GB (at ${memRatio}:1 ratio). Increase Memory/Host, Ratio, or add ${hostsToAdd} more host(s).`;
                  }
              } else {
-                 msg = `This Greenfield hardware specification fits the VCF Management Domain perfectly (${archDesc}), with N-1 High Availability redundancy and ${gfStorageType === 'VSAN' ? '20%' : '10%'} Hypervisor/Storage overhead fully accounted for.`;
+                 msg = `This Greenfield hardware specification fits the VCF Management Domain perfectly (${archDesc}), using VCF 9.1 PnP workbook math: N-1 × physical cores × ${cpuRatio}:1 oversub (no HT). Storage Host/Ops reserve stays on the storage path only.`;
              }
 
              clusterEvaluations.push({ cluster: 'Greenfield Blueprint Cluster', status, type, msg, avgNics: parseInt(gfNics) || 2, networkRec, networkDetails });
@@ -10078,7 +10094,7 @@ const architectureMath = useMemo(() => {
            msFindings,
            msPairInverted: !!msPair?.inverted,
          };
-      }, [rawRvData, sizingSelections, normalizedSizing, displayNvmeMinGb, optTierRatio, wlDomainCount, archMode, gfHosts, gfCores, gfMemGB, gfCpuRatio, gfMemRatio, gfStorageType, gfNics, designIdLookup_]);
+      }, [rawRvData, sizingSelections, normalizedSizing, displayNvmeMinGb, optTierRatio, wlDomainCount, archMode, gfHosts, gfCores, gfMemGB, gfCpuRatio, gfMemRatio, gfStorageType, gfNics, fleetMgmtCluster, designIdLookup_]);
 
       const recaptureMath = useMemo(() => {
         if (!rawRvData || !rawRvData.vHost || !rawRvData.vInfo) return [];
@@ -10205,7 +10221,8 @@ const architectureMath = useMemo(() => {
 
              const extraHostsCpu = deficitCpuMhz > 0 ? Math.ceil(deficitCpuMhz / avgHostMhz) : 0;
              const extraHostsMem = deficitMemMB > 0 ? Math.ceil(deficitMemMB / avgTieredMemMB) : 0;
-             const extraHostsMin = Math.max(0, 4 - data.hosts.length); 
+             const minHostsForRecapture = gfStorageType === 'EXTERNAL' ? 2 : 4;
+             const extraHostsMin = Math.max(0, minHostsForRecapture - data.hosts.length); 
              
              const extraHostsNeeded = Math.max(extraHostsCpu, extraHostsMem, extraHostsMin);
 
@@ -10225,7 +10242,7 @@ const architectureMath = useMemo(() => {
         });
 
         return list;
-      }, [rawRvData, architectureMath, displayNvmeMinGb, optTierRatio]);
+      }, [rawRvData, architectureMath, displayNvmeMinGb, optTierRatio, gfStorageType]);
 
      const exportReadiness = async () => {
         try { await window.ensureXlsx(); } catch (err) {
@@ -13071,7 +13088,7 @@ const architectureMath = useMemo(() => {
                         )}
                      </div>
                      
-                     {archMode === 'GREENFIELD' && (
+                     {archMode === 'GREENFIELD' ? (
                         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 pt-5 mt-4 border-t border-slate-100 dark:border-slate-800 animate-in fade-in slide-in-from-top-2">
                            <div className="flex flex-col">
                               <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Host Count</label>
@@ -13103,9 +13120,9 @@ const architectureMath = useMemo(() => {
                                  value={gfCpuRatio} 
                                  onChange={e => setGfCpuRatio(e.target.value)}
                               >
-                                 <option value="1">1:1 (Strict Perf)</option>
-                                 <option value="1.5">1.5:1 (Balanced)</option>
-                                 <option value="2">2:1 (Max Mgmt Limit)</option>
+                                 <option value="1">1:1 vs physical cores (Excel default)</option>
+                                 <option value="1.5">1.5:1 vs physical cores</option>
+                                 <option value="2">2:1 vs physical cores (PnP guidance)</option>
                               </select>
                            </div>
                            <div className="flex flex-col">
@@ -13131,6 +13148,21 @@ const architectureMath = useMemo(() => {
                                  <option value="4">4+ NICs (Dedicated Profile)</option>
                               </select>
                            </div>
+                        </div>
+                     ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-5 mt-4 border-t border-slate-100 dark:border-slate-800 animate-in fade-in slide-in-from-top-2">
+                           <div className="flex flex-col">
+                              <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Mgmt Storage</label>
+                              <select 
+                                 className="border border-blue-300 dark:border-blue-700 rounded px-3 py-2 text-sm bg-blue-50 dark:bg-blue-950/40 outline-none focus:ring-1 focus:ring-blue-500 font-bold text-blue-700 dark:text-blue-300 shadow-inner cursor-pointer" 
+                                 value={gfStorageType} 
+                                 onChange={e => setGfStorageType(e.target.value)}
+                              >
+                                 <option value="VSAN">vSAN (ESA/OSA) — 4-host Full HA floor</option>
+                                 <option value="EXTERNAL">External (NFS/FC) — 2/3-node Simple/Mixed OK</option>
+                              </select>
+                           </div>
+                           <p className="text-[11px] text-slate-500 dark:text-slate-400 self-end leading-relaxed pb-1">Brownfield adds catalog RAM at full reservation and ~20% of catalog vCPU as active MHz onto RVTools demand, then checks N-1 (drop largest host).</p>
                         </div>
                      )}
                   </details>
@@ -13276,11 +13308,11 @@ const architectureMath = useMemo(() => {
                            <div>
                               <h4 className={`${textClass} text-xs font-bold uppercase tracking-widest mb-1`}>
                                  Target Payload Required
-                                 {isGf && architectureMath?.payloadMode && (
+                                 {architectureMath?.payloadMode && (
                                    <span className="ml-2 normal-case tracking-normal font-bold opacity-90">
-                                     · {architectureMath.payloadMode === 'GLOBAL_SIMPLE' ? 'Global Simple (≤2 hosts)'
+                                     · {architectureMath.payloadMode === 'GLOBAL_SIMPLE' ? 'Global Simple (≤2 hosts · NFS/FC)'
                                        : architectureMath.payloadMode === 'MIXED_SIMPLE_NSX' ? 'Mixed · Simple NSX only (3 hosts)'
-                                       : 'Full HA (4+ hosts / brownfield)'}
+                                       : 'Full HA (4+ hosts / vSAN brownfield)'}
                                    </span>
                                  )}
                               </h4>
@@ -13388,8 +13420,8 @@ const architectureMath = useMemo(() => {
                      <div className="mb-4 p-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-600 dark:text-slate-300 flex items-start gap-2">
                         <IconInfo className="w-4 h-4 shrink-0 mt-0.5 text-slate-400 dark:text-slate-500" />
                         <div className="space-y-1">
-                           <p><strong>* Capacity Estimate Disclaimer:</strong> The utilization percentages and validation status shown are estimates. Greenfield calculations inherently reserve an N-1 High Availability host buffer, and apply a {gfStorageType === 'VSAN' ? '20% overhead tax for vSAN/ESXi' : '10% overhead tax for ESXi'}. Storage capacity metrics are excluded from validation.</p>
-                           <p className="text-[11px] italic text-blue-600 dark:text-blue-400"><strong>Simple footprint rule:</strong> Greenfield <strong>1–2 hosts</strong> → Availability=Simple sizing rows. <strong>Runtime control + worker</strong> = TechDocs MS pair (1 CP + 3 workers). <strong>Exactly 3 hosts</strong> = Simple NSX only. <strong>4+</strong> / brownfield = HA. Design IDs come from the VCF Sizing sheet and open TechDocs via the Design IDs tab.</p>
+                           <p><strong>* Capacity Estimate Disclaimer:</strong> Greenfield CPU/RAM fit follows the VCF 9.1 Planning &amp; Preparation workbook: N-1 × physical cores × CPU oversub, and N-1 × host RAM × mem oversub (no hyper-thread multiplier). The workbook’s Host and Operations Reserve % applies to <em>storage</em> sizing only. Catalog appliance vCPU/RAM come from the VCF Sizing sheet (same family as the workbook Static Reference Tables). Storage capacity is shown but not used as a Placement pass/fail gate.</p>
+                           <p className="text-[11px] italic text-blue-600 dark:text-blue-400"><strong>Simple footprint rule:</strong> <strong>1–2 hosts</strong> + External (NFS/FC) → Availability=Simple. <strong>Runtime control + worker</strong> = TechDocs MS pair (1 CP + 3 workers). <strong>Exactly 3 hosts</strong> = Simple NSX only. <strong>4+</strong> / vSAN brownfield = Full HA. Design IDs come from the VCF Sizing sheet and open TechDocs via the Design IDs tab.</p>
                         </div>
                      </div>
                   )}
