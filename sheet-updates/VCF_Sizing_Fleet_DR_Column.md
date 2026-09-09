@@ -33,7 +33,10 @@ Identity Broker, Offline Software Depot, Log Management (, Salt / Fleet LCM if p
 Avi, SSP (mgmt + WLD), WLD vCenter / NSX, Real-time Metrics, Licensing Hub.
 
 ## App behavior notes
-- DR-only **ignores** Primary Required when deciding checkboxes — only Fleet DR / heuristics.
+- DR-only **ignores** Primary Required when deciding the locked minimum — only Fleet DR / heuristics for **DR min**.
+- **DR min (locked on):** Ops, Automation, SDDC Manager, mgmt vCenter, mgmt NSX Managers, MS runtime.
+- **From primary / Recommend:** Edges, VNA, License, Cloud Proxy, Protection Blueprint, Ops for Networks — included if they were on primary; otherwise amber **Recommend** to click (or Enable all recommended).
+- **Restore later:** Identity Broker, Depot, Log Management — dimmed, not sized.
 - Red callout = Primary Required ∪ pre–DR selections ∪ DR-min sized rows (one site) — always ≥ blue DR-minimum target.
-- **Fleet DR pair never multiplies fit validation ×2.** Primary and recovery are sized as separate single-site payloads. Only *independent* multi-instance (not Fleet DR) uses ×N.
+- **Fleet DR pair never multiplies fit validation ×2.** Primary and recovery are sized as separate single-site payloads.
 - Sheet Location typo `Serices` is normalized to `Services`; SSP mgmt and WLD are separate optional groups.

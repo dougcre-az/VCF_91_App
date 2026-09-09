@@ -8193,63 +8193,81 @@ const VCFApp = () => {
         if (/software\s*depot|offline\s*software\s*depot/.test(n) || (/\bdepot\b/.test(n) && !/operations/.test(n))) return 'RESTORE_ONLY';
         if (/\bsalt\b/.test(n)) return 'RESTORE_ONLY';
         if (/fleet\s*lifecycle|fleet\s*lcm/.test(n)) return 'RESTORE_ONLY';
-        // Log Management is restored onto recovery VCFMS — do not pre-size a second LM stack.
         if (/log\s*management|vcf\s*logs/.test(n)) return 'RESTORE_ONLY';
-        // Workload-domain and optional add-ons are not Fleet DR mgmt-app minimum.
         if (/workload\s*domain/.test(n)) return 'EXCLUDE';
         if (/avi|load\s*balancer|hcx|data\s*services|\bdsm\b|security\s*services|\bssp\b|vdefend|licensing\s*hub|real-?time\s*metrics/.test(n)) return 'EXCLUDE';
-        if (msRuntimeRole_(compName)) return 'FOUNDATION';
-        if (/operations\s+for\s+networks/.test(n)) return 'PROTECT';
-        if (/vcf\s*operations|vrealize\s*operations/.test(n) && !/networks/.test(n)) return 'PROTECT';
-        if (/automation/.test(n)) return 'REDEPLOY';
-        // Recovery VCF instance still needs a management domain + P&R capacity + MS host.
-        if (/protection\s*blueprint/.test(n)) return 'FOUNDATION';
-        if (/management\s*domain\s*vcenter/.test(n)) return 'FOUNDATION';
-        if (/management\s*domain\s*nsx\s*managers/.test(n)) return 'FOUNDATION';
-        if (/management\s*domain\s*nsx\s*edges/.test(n)) return 'FOUNDATION';
-        if (/virtual\s*network\s*appliance/.test(n)) return 'FOUNDATION';
-        if (/sddc\s*manager|license\s*server|cloud\s*proxy/.test(n)) return 'FOUNDATION';
+        // Absolute recovery minimum (always size at DR).
+        if (msRuntimeRole_(compName)) return 'MUST';
+        if (/automation/.test(n)) return 'MUST'; // redeploy new + restore
+        if (/vcf\s*operations|vrealize\s*operations/.test(n) && !/networks/.test(n)) return 'MUST'; // P&R
+        if (/sddc\s*manager/.test(n)) return 'MUST';
+        if (/management\s*domain\s*vcenter/.test(n)) return 'MUST';
+        if (/management\s*domain\s*nsx\s*managers/.test(n)) return 'MUST';
+        // Recommend sizing at DR only when these ran on primary (or sheet says Yes/Protect).
+        if (/operations\s+for\s+networks/.test(n)) return 'IF_PRIMARY';
+        if (/protection\s*blueprint/.test(n)) return 'IF_PRIMARY';
+        if (/management\s*domain\s*nsx\s*edges/.test(n)) return 'IF_PRIMARY';
+        if (/virtual\s*network\s*appliance/.test(n)) return 'IF_PRIMARY';
+        if (/license\s*server|cloud\s*proxy/.test(n)) return 'IF_PRIMARY';
         return 'DEFAULT';
       };
 
       const fleetDrRoleForSelection_ = (compName, config) => {
         const sheetRole = parseFleetDrSheetRole_(config?.fleetDrSheet);
-        return sheetRole || fleetDrHeuristicRole_(compName);
+        if (!sheetRole) return fleetDrHeuristicRole_(compName);
+        // Map sheet enums onto must / if-primary / restore / exclude.
+        if (sheetRole === 'RESTORE_ONLY' || sheetRole === 'EXCLUDE') return sheetRole;
+        if (sheetRole === 'REDEPLOY' || sheetRole === 'PROTECT') {
+          // Automation + Ops are must; Ops for Networks stays conditional unless sheet forces Protect on collector parent.
+          const n = String(compName || '').toLowerCase();
+          if (/operations\s+for\s+networks/.test(n)) return 'IF_PRIMARY';
+          return 'MUST';
+        }
+        if (sheetRole === 'DR_SIZE') {
+          const heuristic = fleetDrHeuristicRole_(compName);
+          return heuristic === 'IF_PRIMARY' ? 'IF_PRIMARY' : 'MUST';
+        }
+        return sheetRole;
       };
 
-      // Back-compat alias used by UI/math.
       const fleetDrCatalogRole_ = (compName, config) => fleetDrRoleForSelection_(compName, config || sizingSelections?.[compName]);
 
-      const fleetDrRoleShouldSize_ = (role) => ['DR_SIZE', 'PROTECT', 'REDEPLOY', 'FOUNDATION'].includes(role);
-      const fleetDrRoleBadge_ = (role) => {
-        if (role === 'PROTECT') return { text: 'P&R', title: 'Protection & Recovery — size capacity at the recovery site', className: 'bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-200' };
-        if (role === 'REDEPLOY') return { text: 'Redeploy', title: 'Redeploy new instance on recovery site, then restore from backup — size capacity at DR', className: 'bg-indigo-100 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-200' };
-        if (role === 'DR_SIZE' || role === 'FOUNDATION') return { text: 'DR size', title: 'Required capacity on the recovery VCF instance for Fleet DR', className: 'bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-200' };
-        if (role === 'RESTORE_ONLY') return { text: 'Restore', title: 'Restore onto recovery VCFMS — do not pre-deploy (Fleet DR ** components)', className: 'bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-200' };
+      const fleetDrRoleShouldSize_ = (role) => role === 'MUST' || role === 'IF_PRIMARY';
+      const fleetDrRoleIsMust_ = (role) => role === 'MUST';
+      const fleetDrUiBadge_ = (tier) => {
+        if (tier === 'must') return { text: 'DR min', title: 'Required recovery-site capacity for Fleet DR', className: 'bg-violet-600 text-white' };
+        if (tier === 'from_primary') return { text: 'From primary', title: 'Also running on primary — included in DR sizing', className: 'bg-sky-100 dark:bg-sky-950/50 text-sky-800 dark:text-sky-200' };
+        if (tier === 'recommend') return { text: 'Recommend', title: 'Running on primary — click to size at DR', className: 'bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200' };
+        if (tier === 'restore') return { text: 'Restore later', title: 'Restore onto recovery VCFMS — do not pre-deploy', className: 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300' };
         return null;
       };
 
-      const applyFleetDrMinimumSelections_ = (prev) => {
+      const wasEnabledOnPrimary_ = (name, snap) => {
+        const s = snap?.[name];
+        return !!(s && (s.enabled || s.isMandatory));
+      };
+
+      const applyFleetDrMinimumSelections_ = (prev, snap) => {
+        const baseSnap = snap || prev;
         const next = {};
         Object.entries(prev || {}).forEach(([name, config]) => {
           if (!config) return;
           const role = fleetDrRoleForSelection_(name, config);
           let enabled = false;
-          // DR-only follows Fleet DR column / heuristics only — Primary Required (Required=Yes) does not force recovery sizing.
-          if (role === 'RESTORE_ONLY' || role === 'EXCLUDE') enabled = false;
-          else if (fleetDrRoleShouldSize_(role)) enabled = true;
-          else enabled = false;
+          if (role === 'RESTORE_ONLY' || role === 'EXCLUDE' || role === 'DEFAULT') enabled = false;
+          else if (role === 'MUST') enabled = true;
+          else if (role === 'IF_PRIMARY') enabled = wasEnabledOnPrimary_(name, baseSnap);
           next[name] = { ...config, enabled, fleetDrRole: role };
         });
-        // Ops-for-Networks collector follows parent when DR-sizing Networks.
+        // Ops-for-Networks collector follows parent when Networks is sized at DR.
         const opsNetKey = Object.keys(next).find((k) => /operations\s+for\s+networks/i.test(k) && !/collector/i.test(k));
         const collectorKey = Object.keys(next).find((k) => /operations\s+for\s+networks\s+collector/i.test(k));
         if (opsNetKey && collectorKey && next[collectorKey]) {
-          const parentOn = !!next[opsNetKey].enabled;
-          const collRole = fleetDrRoleForSelection_(collectorKey, next[collectorKey]);
-          if (collRole !== 'RESTORE_ONLY' && collRole !== 'EXCLUDE') {
-            next[collectorKey] = { ...next[collectorKey], enabled: parentOn || fleetDrRoleShouldSize_(collRole), fleetDrRole: collRole === 'DEFAULT' ? 'PROTECT' : collRole };
-          }
+          next[collectorKey] = {
+            ...next[collectorKey],
+            enabled: !!next[opsNetKey].enabled,
+            fleetDrRole: next[collectorKey].fleetDrRole === 'RESTORE_ONLY' ? 'RESTORE_ONLY' : 'IF_PRIMARY',
+          };
         }
         return next;
       };
@@ -8284,13 +8302,12 @@ const VCFApp = () => {
         if (nextScope === 'DR_MINIMUM') {
           setSizingSelections((prev) => {
             if (!prev || Object.keys(prev).length === 0) return prev;
-            // Preserve original full-estate snapshot across re-applies.
             if (placementPayloadScope !== 'DR_MINIMUM' || !preDrMinimumSelectionsRef.current) {
               preDrMinimumSelectionsRef.current = prev;
               preDrMinimumWlCountRef.current = wlDomainCount;
             }
             const base = preDrMinimumSelectionsRef.current || prev;
-            return applyFleetDrMinimumSelections_(base);
+            return applyFleetDrMinimumSelections_(base, base);
           });
           setPlacementPayloadScope('DR_MINIMUM');
           return;
@@ -8521,7 +8538,7 @@ const VCFApp = () => {
           if (placementPayloadScope === 'DR_MINIMUM') {
             preDrMinimumSelectionsRef.current = initialSelections;
             preDrMinimumWlCountRef.current = wlDomainCount;
-            setSizingSelections(applyFleetDrMinimumSelections_(initialSelections));
+            setSizingSelections(applyFleetDrMinimumSelections_(initialSelections, initialSelections));
           } else {
             setSizingSelections(initialSelections);
           }
@@ -13878,10 +13895,49 @@ const architectureMath = useMemo(() => {
                         <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{enabledCatalogCount} enabled{placementPayloadScope === 'DR_MINIMUM' ? ' · DR only' : ''}</span>
                      </summary>
                      {(() => {
+                       const primarySnap = preDrMinimumSelectionsRef.current || {};
+                       const isDrMode = placementPayloadScope === 'DR_MINIMUM';
+                       const drCompMeta_ = (comp, sel) => {
+                         const role = fleetDrCatalogRole_(comp, sel);
+                         const onPrimary = wasEnabledOnPrimary_(comp, primarySnap);
+                         if (role === 'MUST') return { role, tier: 'must', locked: true };
+                         if (role === 'IF_PRIMARY') {
+                           if (sel?.enabled) return { role, tier: 'from_primary', locked: false };
+                           if (onPrimary) return { role, tier: 'recommend', locked: false };
+                           return { role, tier: 'optional', locked: false };
+                         }
+                         if (role === 'RESTORE_ONLY') return { role, tier: 'restore', locked: true };
+                         return { role, tier: 'skip', locked: true };
+                       };
+                       const enableRecommendedFromPrimary_ = () => {
+                         setSizingSelections((prev) => {
+                           const next = { ...prev };
+                           Object.keys(next).forEach((name) => {
+                             const meta = drCompMeta_(name, next[name]);
+                             if (meta.tier === 'recommend') next[name] = { ...next[name], enabled: true };
+                           });
+                           const opsNetKey = Object.keys(next).find((k) => /operations\s+for\s+networks/i.test(k) && !/collector/i.test(k));
+                           const collectorKey = Object.keys(next).find((k) => /operations\s+for\s+networks\s+collector/i.test(k));
+                           if (opsNetKey && collectorKey && next[opsNetKey]?.enabled && next[collectorKey]) {
+                             next[collectorKey] = { ...next[collectorKey], enabled: true };
+                           }
+                           return next;
+                         });
+                       };
                        const renderPlacementGroup = (group, groupIdx, allGroups) => {
                               const groupComps = [...new Set(normalizedSizing.filter(r => r.group === group).map(r => r.component))]
                                 .filter(comp => !isSimpleCatalogComponent_(comp));
                               if (groupComps.length === 0) return null;
+                              // In DR mode, hide exclude/skip noise from core cards (optional add-ons still list Avi/SSP).
+                              const visibleComps = isDrMode
+                                ? groupComps.filter((comp) => {
+                                    const sel = sizingSelections[comp];
+                                    if (!sel) return false;
+                                    const tier = drCompMeta_(comp, sel).tier;
+                                    return tier !== 'skip';
+                                  })
+                                : groupComps;
+                              if (visibleComps.length === 0) return null;
                               const isAviGroup = /avi/i.test(group);
                               const isSspGroup = /security services|ssp/i.test(group);
                               const isFirstAviGroup = isAviGroup && !allGroups.slice(0, groupIdx).some(g => /avi/i.test(g) && normalizedSizing.some(r => r.group === g));
@@ -13898,29 +13954,36 @@ const architectureMath = useMemo(() => {
                                  <div key={group} id={isFirstAviGroup ? 'arch-avi-sizing' : undefined} className={`p-3 rounded-xl border h-fit self-start ${shellClass}`}>
                                     <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-200 dark:border-slate-700 pb-1">{group}</h4>
                                     <div className="space-y-3">
-                                       {groupComps.map(comp => {
+                                       {visibleComps.map(comp => {
                                           const sel = sizingSelections[comp];
                                           if (!sel) return null;
-                                          const drRole = fleetDrCatalogRole_(comp, sel);
-                                          const roleBadge = placementPayloadScope === 'DR_MINIMUM' ? fleetDrRoleBadge_(drRole) : null;
-                                          const drLocked = placementPayloadScope === 'DR_MINIMUM' && (drRole === 'RESTORE_ONLY' || drRole === 'EXCLUDE' || fleetDrRoleShouldSize_(drRole));
+                                          const meta = isDrMode ? drCompMeta_(comp, sel) : null;
+                                          const badge = meta ? fleetDrUiBadge_(meta.tier) : null;
+                                          const rowHighlight = !isDrMode ? ''
+                                            : meta.tier === 'must' ? 'rounded-lg bg-violet-100/80 dark:bg-violet-950/40 border border-violet-300 dark:border-violet-700 -ml-1 pl-2 pr-1 py-1.5'
+                                            : meta.tier === 'recommend' ? 'rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 -ml-1 pl-2 pr-1 py-1.5'
+                                            : meta.tier === 'from_primary' ? 'rounded-lg bg-sky-50/80 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 -ml-1 pl-2 pr-1 py-1.5'
+                                            : meta.tier === 'restore' ? 'opacity-60' : '';
+                                          const locked = isDrMode
+                                            ? (meta.tier === 'must' || meta.tier === 'restore' || meta.tier === 'skip')
+                                            : !!sel.isMandatory;
                                           return (
-                                             <div key={comp} className="border-l-2 border-slate-300 dark:border-slate-600 pl-3">
+                                             <div key={comp} className={`border-l-2 ${meta?.tier === 'must' ? 'border-violet-500' : meta?.tier === 'recommend' ? 'border-amber-400' : 'border-slate-300 dark:border-slate-600'} pl-3 ${rowHighlight}`}>
                                                 <div className="flex items-start justify-between gap-2">
                                                    <label className={`text-sm font-bold leading-tight pr-2 flex items-center gap-2 cursor-pointer ${sel.enabled ? 'text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300'}`}>
                                                       <input type="checkbox" className="w-4 h-4 text-blue-600 dark:text-blue-400 rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500 cursor-pointer shrink-0"
                                                          checked={sel.enabled}
-                                                         disabled={placementPayloadScope === 'DR_MINIMUM' ? drLocked : !!sel.isMandatory}
+                                                         disabled={locked}
                                                          onChange={(e) => handleComponentToggle(comp, e.target.checked)}
                                                       />
                                                       {comp}
                                                    </label>
                                                    <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
-                                                     {sel.isMandatory && !(placementPayloadScope === 'DR_MINIMUM' && drRole === 'RESTORE_ONLY') && (
-                                                       <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded uppercase font-bold" title="Primary Required — mandatory on the primary VCF instance (sheet Required / Primary Required column)">Primary</span>
+                                                     {!isDrMode && sel.isMandatory && (
+                                                       <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded uppercase font-bold" title="Primary Required — mandatory on the primary VCF instance">Primary</span>
                                                      )}
-                                                     {roleBadge && (
-                                                       <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold ${roleBadge.className}`} title={roleBadge.title}>{roleBadge.text}</span>
+                                                     {badge && (
+                                                       <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold ${badge.className}`} title={badge.title}>{badge.text}</span>
                                                      )}
                                                    </div>
                                                 </div>
@@ -13941,16 +14004,26 @@ const architectureMath = useMemo(() => {
                               );
                        };
 
+                       const recommendList = isDrMode
+                         ? Object.keys(sizingSelections).filter((name) => drCompMeta_(name, sizingSelections[name]).tier === 'recommend')
+                         : [];
+                       const restoreList = isDrMode
+                         ? Object.keys(sizingSelections).filter((name) => drCompMeta_(name, sizingSelections[name]).tier === 'restore')
+                         : [];
+                       const mustCount = isDrMode
+                         ? Object.keys(sizingSelections).filter((name) => sizingSelections[name]?.enabled && drCompMeta_(name, sizingSelections[name]).tier === 'must').length
+                         : 0;
+
                        return (
                          <div className="space-y-5">
-                           <div className={`rounded-xl border p-4 ${hldDrFleetPair || placementPayloadScope === 'DR_MINIMUM' ? 'border-violet-200 dark:border-violet-800 bg-violet-50/80 dark:bg-violet-950/30' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40'}`}>
+                           <div className={`rounded-xl border p-4 ${hldDrFleetPair || isDrMode ? 'border-violet-200 dark:border-violet-800 bg-violet-50/80 dark:bg-violet-950/30' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40'}`}>
                              <div className="flex flex-wrap items-start justify-between gap-3">
                                <div className="min-w-0">
                                  <div className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-300 flex items-center gap-1">
                                    Placement payload scope
-                                   <SizerInfo text="DR only uses the Fleet DR sheet column (Yes / Protect / Redeploy / Restore / No) — not Primary Required. Size at recovery: Ops + Ops for networks (P&amp;R), Automation (redeploy), management-domain foundation (vCenter, NSX Managers/Edges/VNA, SDDC Manager, License, Cloud Proxy, MS runtime, Protection Blueprint). Restore-only stays off: Identity Broker, Depot, Log Management, Salt, Fleet LCM. Workload-domain and Avi/SSP stay out of DR-minimum." href={SIZER_DOCS.fleetDr.href} hrefLabel="Fleet DR blueprint" />
+                                   <SizerInfo text="DR only highlights the recovery minimum (must size), then recommends other services that were running on primary. Restore-only components stay off. Fit validation is always one site." href={SIZER_DOCS.fleetDr.href} hrefLabel="Fleet DR blueprint" />
                                  </div>
-                                 <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed"><strong>Required</strong> = primary instance. <strong>Fleet DR</strong> = recovery minimum. Fit validation is always <strong>one site</strong> — Fleet DR does not multiply catalog rows ×2.</p>
+                                 <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">Full estate = primary catalog. DR only = recovery site: highlight minimums, recommend from primary — never ×2.</p>
                                </div>
                              </div>
                              <div className="flex flex-wrap gap-4 mt-3">
@@ -13963,19 +14036,31 @@ const architectureMath = useMemo(() => {
                                  DR only (Fleet DR minimum)
                                </label>
                              </div>
-                             {placementPayloadScope === 'DR_MINIMUM' && (
-                               <p className="text-[10px] text-violet-900 dark:text-violet-200 mt-2 leading-relaxed">
-                                 Auto-selected from the <SizerDocLink href={SIZER_DOCS.fleetDr.href}>Fleet DR blueprint</SizerDocLink>
-                                 {' · '}
-                                 <SizerDocLink href={SIZER_DOCS.fleetDrChecklist.href}>failover checklist</SizerDocLink>
-                                 {' · '}
-                                 <SizerDocLink href={SIZER_DOCS.opsDeploymentModels.href}>Ops deployment models</SizerDocLink>
-                                 . Sheet column <span className="font-mono">fleet_dr</span> (Yes / No / Restore / Redeploy / Protect) overrides name heuristics when present.
-                               </p>
+                             {isDrMode && (
+                               <div className="mt-3 space-y-2 rounded-lg border border-violet-200 dark:border-violet-800 bg-white/70 dark:bg-slate-950/40 p-3">
+                                 <p className="text-[11px] text-violet-950 dark:text-violet-100 leading-relaxed">
+                                   <strong className="text-violet-700 dark:text-violet-300">{mustCount} DR min</strong> services are highlighted and locked on.
+                                   {recommendList.length > 0
+                                     ? <> Amber <strong>Recommend</strong> rows were on primary — click to size them at DR, or </>
+                                     : <> </>}
+                                   {recommendList.length > 0 && (
+                                     <button type="button" onClick={enableRecommendedFromPrimary_} className="font-black uppercase tracking-widest text-[10px] text-amber-800 dark:text-amber-200 underline underline-offset-2">
+                                       enable all recommended
+                                     </button>
+                                   )}
+                                   {recommendList.length === 0 && <span className="text-slate-600 dark:text-slate-300">No extra primary services to recommend beyond the DR minimum.</span>}
+                                 </p>
+                                 {recommendList.length > 0 && (
+                                   <p className="text-[10px] text-amber-900 dark:text-amber-200 leading-relaxed">Recommended: {recommendList.join(' · ')}</p>
+                                 )}
+                                 {restoreList.length > 0 && (
+                                   <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">Restore later (not pre-sized): {restoreList.join(' · ')}</p>
+                                 )}
+                               </div>
                              )}
                            </div>
                            <div>
-                             <div className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300 mb-2">Core VCF placement</div>
+                             <div className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300 mb-2">{isDrMode ? 'Recovery-site services' : 'Core VCF placement'}</div>
                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
                                {coreGroupings.map((group, groupIdx) => renderPlacementGroup(group, groupIdx, coreGroupings))}
                              </div>
@@ -13991,7 +14076,7 @@ const architectureMath = useMemo(() => {
                                >
                                  <div>
                                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Optional add-ons · Avi / SSP (mgmt + WLD) / other</div>
-                                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{placementPayloadScope === 'DR_MINIMUM' ? 'Excluded from DR-minimum payload (still listed for reference).' : 'Collapsed by default so Fleet and domain placement stay on screen.'}</p>
+                                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{isDrMode ? 'Excluded from DR-minimum payload (still listed for reference).' : 'Collapsed by default so Fleet and domain placement stay on screen.'}</p>
                                  </div>
                                  <span className="text-xs font-black text-slate-400 dark:text-slate-500 transition-transform group-open/opt:rotate-90">▶</span>
                                </summary>
