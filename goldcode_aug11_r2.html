@@ -7512,7 +7512,7 @@ const VCFApp = () => {
         OPTIMIZE: ['Optimization Matrix', 'Core workflow · Step 3 of 7'],
         EDGE: ['Edge Architecture', 'Core workflow · Step 4 of 7'],
         ARCHITECTURE: ['Placement Engine', 'Core workflow · Step 5 of 7'],
-        FLEET: ['Mgmt Plane & Control Grid', 'Core workflow · Step 6 of 7'],
+        FLEET: ['Design Builder', 'Core workflow · Step 6 of 7'],
         VALUE_VCF: ['Value of VCF', 'Core workflow · Step 7 of 7'],
         VSAN_SIZER: ['vSAN ESA Sizer', 'Specialist sizing tool'],
         DR_SIZER: ['DR / Live Recovery', 'Specialist sizing tool'],
@@ -7902,7 +7902,7 @@ const VCFApp = () => {
       const [gfHosts, setGfHosts] = useState(4); 
       const [gfCores, setGfCores] = useState(64);
       const [gfMemGB, setGfMemGB] = useState(1024);
-      const [gfCpuRatio, setGfCpuRatio] = useState(2); 
+      const [gfCpuRatio, setGfCpuRatio] = useState(1); 
       const [gfMemRatio, setGfMemRatio] = useState(1);
       const [gfStorageType, setGfStorageType] = useState('VSAN');
       const [gfNics, setGfNics] = useState('2');
@@ -11011,38 +11011,38 @@ const architectureMath = useMemo(() => {
              {!isSidebarCollapsed && <div className="px-6 mb-2 text-xs font-black tracking-widest uppercase text-slate-500 whitespace-nowrap">Core workflow</div>}
              
              <button onClick={() => setActiveModule('READINESS')} title="Readiness & Health" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'READINESS' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
-                <span className={isSidebarCollapsed ? '' : 'mr-3'}><IconCheck /></span>
-                {!isSidebarCollapsed && "1. Readiness & Health"}
+                <span className={`shrink-0 inline-flex w-5 justify-center ${isSidebarCollapsed ? '' : 'mr-3'}`}><IconCheck /></span>
+                {!isSidebarCollapsed && <span className="whitespace-nowrap truncate">1. Readiness & Health</span>}
              </button>
 
              <button onClick={() => setActiveModule('UPGRADE_PLAN')} title="Upgrade Roadmap" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'UPGRADE_PLAN' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
-                <span className={isSidebarCollapsed ? '' : 'mr-3'}><IconActivity /></span>
-                {!isSidebarCollapsed && "2. Upgrade Roadmap"}
+                <span className={`shrink-0 inline-flex w-5 justify-center ${isSidebarCollapsed ? '' : 'mr-3'}`}><IconActivity /></span>
+                {!isSidebarCollapsed && <span className="whitespace-nowrap truncate">2. Upgrade Roadmap</span>}
              </button>
              
              <button onClick={() => setActiveModule('OPTIMIZE')} title="Optimization Matrix" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'OPTIMIZE' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
-                <span className={isSidebarCollapsed ? '' : 'mr-3'}><IconHardDrive /></span>
-                {!isSidebarCollapsed && "3. Optimization Matrix"}
+                <span className={`shrink-0 inline-flex w-5 justify-center ${isSidebarCollapsed ? '' : 'mr-3'}`}><IconHardDrive /></span>
+                {!isSidebarCollapsed && <span className="whitespace-nowrap truncate">3. Optimization Matrix</span>}
              </button>
 
              <button onClick={() => setActiveModule('EDGE')} title="Edge Architecture" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'EDGE' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
-                <span className={isSidebarCollapsed ? '' : 'mr-3'}><IconNetwork /></span>
-                {!isSidebarCollapsed && "4. Edge Architecture"}
+                <span className={`shrink-0 inline-flex w-5 justify-center ${isSidebarCollapsed ? '' : 'mr-3'}`}><IconNetwork /></span>
+                {!isSidebarCollapsed && <span className="whitespace-nowrap truncate">4. Edge Architecture</span>}
              </button>
              
              <button onClick={() => setActiveModule('ARCHITECTURE')} title="Placement Engine" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'ARCHITECTURE' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
-                <span className={isSidebarCollapsed ? '' : 'mr-3'}><IconBox /></span>
-                {!isSidebarCollapsed && "5. Placement Engine"}
+                <span className={`shrink-0 inline-flex w-5 justify-center ${isSidebarCollapsed ? '' : 'mr-3'}`}><IconBox /></span>
+                {!isSidebarCollapsed && <span className="whitespace-nowrap truncate">5. Placement Engine</span>}
              </button>
 
-             <button onClick={() => { setActiveModule('FLEET'); setHldBuilderView('MGMT_PLANE'); }} title="Management Plane & Control Grid" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'FLEET' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
-                <span className={isSidebarCollapsed ? '' : 'mr-3'}><IconFleet /></span>
-                {!isSidebarCollapsed && "6. Mgmt Plane & Control Grid"}
+             <button onClick={() => { setActiveModule('FLEET'); setHldBuilderView('MGMT_PLANE'); }} title="Design Builder" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'FLEET' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
+                <span className={`shrink-0 inline-flex w-5 justify-center ${isSidebarCollapsed ? '' : 'mr-3'}`}><IconFleet /></span>
+                {!isSidebarCollapsed && <span className="whitespace-nowrap truncate">6. Design Builder</span>}
              </button>
 
              <button onClick={() => setActiveModule('VALUE_VCF')} title="Value of VCF" className={`w-full flex items-center py-3 text-sm font-medium transition-colors ${activeModule === 'VALUE_VCF' ? 'bg-blue-600/10 text-blue-400 border-r-4 border-blue-500' : 'hover:bg-slate-800 hover:text-white'} ${isSidebarCollapsed ? 'justify-center px-0' : 'px-6'}`}>
-                <span className={isSidebarCollapsed ? '' : 'mr-3'}><IconActivity /></span>
-                {!isSidebarCollapsed && "7. Value of VCF"}
+                <span className={`shrink-0 inline-flex w-5 justify-center ${isSidebarCollapsed ? '' : 'mr-3'}`}><IconActivity /></span>
+                {!isSidebarCollapsed && <span className="whitespace-nowrap truncate">7. Value of VCF</span>}
              </button>
 
              {!isSidebarCollapsed && <div className="px-6 mt-5 mb-2 text-xs font-black tracking-widest uppercase text-slate-500 whitespace-nowrap">Specialist design tools</div>}
@@ -13120,9 +13120,10 @@ const architectureMath = useMemo(() => {
                                  value={gfCpuRatio} 
                                  onChange={e => setGfCpuRatio(e.target.value)}
                               >
-                                 <option value="1">1:1 vs physical cores (Excel default)</option>
-                                 <option value="1.5">1.5:1 vs physical cores</option>
-                                 <option value="2">2:1 vs physical cores (PnP guidance)</option>
+                                 <option value="1">1:1 - Default</option>
+                                 <option value="2">2:1 - Recommended</option>
+                                 <option value="3">3:1 - Maximum</option>
+                                 <option value="4">4:1 - Maximum</option>
                               </select>
                            </div>
                            <div className="flex flex-col">
