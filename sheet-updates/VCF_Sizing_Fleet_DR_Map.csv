@@ -1,0 +1,26 @@
+Component,Location,Required (any row Yes?),Fleet DR,Notes
+Cloud Proxy,VCF Fleet Components,Yes,Yes,
+Identity Broker,VCF Management Services,Yes,Restore,Blueprint ** — restore onto recovery VCFMS; do not pre-deploy
+License Server,VCF Management Services,Yes,Yes,
+Log Management,VCF Management Services,No,Restore,Restore onto recovery VCFMS; do not pre-size a second LM stack
+Management Domain AVI Load Balancer,AVI Management Domain,No,No,
+Management Domain NSX Edges,VCF Management Domain,No,Yes,Failover checklist: Edges must be available at recovery
+Management Domain NSX Managers (Local / Global),VCF Management Domain,Yes,Yes,
+Management Domain Security Services Platform,Security Serices Platform Management Domain,No,No,
+Management Domain Virtual Network Appliances,VCF Management Domain,No,Yes,Recovery mgmt networking path (if design uses VNA)
+Management Domain vCenter,VCF Management Domain,Yes,Yes,
+Offline Software Depot,VCF Management Services,No,Restore,Blueprint ** — restore onto recovery VCFMS; do not pre-deploy
+Protection Blueprint Requirements,VCF Management Services,Yes,Yes,P&R / site-protection capacity used with Fleet DR Ops failover
+Real-time Metrics,VCF Management Services,No,No,Optional MS workload — not Fleet DR minimum
+SDDC Manager,VCF Management Services,Yes,Yes,
+VCF Automation,VCF Fleet Components,No,Redeploy,"Redeploy NEW Automation on recovery, then restore from backup — must size"
+VCF Operations,VCF Fleet Components,Yes,Protect,Protection & Recovery (or CA) — size capacity at recovery
+VCF Operations for networks,VCF Management Services,No,Protect,Protection & Recovery — size if used in protected fleet
+VCF Operations for networks collector,VCF Management Services,No,Protect,Follows Ops for Networks
+VCF services runtime control nodes,VCF Management Services,Yes,Yes,
+VCF services runtime worker nodes,VCF Management Services,Yes,Yes,
+Workload Domain AVI Load Balancer,AVI Workload Domain,No,No,
+Workload Domain NSX Managers (Local / Global),VCF Workload Domain,No,No,Not Fleet DR mgmt-app minimum
+Workload Domain Security Services Platform,Security Serices Platform Workload Domain,No,No,
+Workload Domain vCenter,VCF Workload Domain,No,No,Not Fleet DR mgmt-app minimum (workload recovery is separate)
+vDefend and AVI Licensing Hub,Base with SSP in Management Domain,No,No,
