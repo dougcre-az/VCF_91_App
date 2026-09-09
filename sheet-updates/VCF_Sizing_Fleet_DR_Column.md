@@ -1,69 +1,38 @@
-# VCF Sizing sheet — `fleet_dr` column (optional)
+# VCF Sizing — Primary Required vs Fleet DR
 
-Add a column on the **VCF Sizing** tab named one of:
+Two independent columns drive Placement:
 
-`fleet_dr` · `Fleet DR` · `dr_minimum` · `DR Minimum`
-
-The Placement Engine **DR only** mode reads this first; blank cells fall back to Broadcom Fleet DR heuristics in the app.
-
-Fill the **same value on every Size/Availability row** for a component (Small/Medium/Large/Simple) so nothing is ambiguous.
-
-## Allowed values
-
-| Value | Meaning | Checkbox in DR only |
+| Column | Purpose | Consumed when |
 |---|---|---|
-| **Yes** | Size this appliance at the recovery site | On (locked) |
-| **Protect** | Protection & Recovery target (Ops / Ops for Networks) | On (locked) |
-| **Redeploy** | New deploy on recovery + restore (Automation) | On (locked) |
-| **Restore** | Restore onto recovery VCFMS — do **not** pre-deploy | Off (locked) |
-| **No** | Not part of Fleet DR minimum | Off (manual OK) |
-| *(blank)* | Use app heuristic | — |
+| **Required** (or rename to **Primary Required**) | Mandatory on the **primary** VCF instance | Full estate / normal placement |
+| **Fleet DR** | What to **size at the recovery site** in DR-only mode | Placement payload scope = DR only |
 
-## Recommended map (matches `VCF_Sizing_Fleet_DR_Map.csv`)
+They must not be conflated. `Required=Yes` on Identity Broker does **not** mean size it at DR — Fleet DR should be `Restore`.
 
-### Restore (do not pre-deploy)
-| Component | Fleet DR |
+## Fleet DR values
+
+| Value | Checkbox in DR only |
 |---|---|
-| Identity Broker | Restore |
-| Offline Software Depot | Restore |
-| Log Management | Restore |
+| **Yes** | On — size at recovery |
+| **Protect** | On — Ops / Ops for Networks (P&R) |
+| **Redeploy** | On — Automation (new deploy + restore) |
+| **Restore** | Off — restore onto recovery VCFMS; do not pre-deploy |
+| **No** | Off — not Fleet DR minimum |
 
-### Size at recovery — Protect / Redeploy
-| Component | Fleet DR |
-|---|---|
-| VCF Operations | Protect |
-| VCF Operations for networks | Protect |
-| VCF Operations for networks collector | Protect |
-| VCF Automation | Redeploy |
+## Recommended Fleet DR map
 
-### Size at recovery — foundation (Yes)
-| Component | Fleet DR |
-|---|---|
-| SDDC Manager | Yes |
-| License Server | Yes |
-| Cloud Proxy | Yes |
-| VCF services runtime control nodes | Yes |
-| VCF services runtime worker nodes | Yes |
-| Management Domain vCenter | Yes |
-| Management Domain NSX Managers (Local / Global) | Yes |
-| Management Domain NSX Edges | Yes |
-| Management Domain Virtual Network Appliances | Yes |
-| Protection Blueprint Requirements | Yes |
+See `VCF_Sizing_Fleet_DR_Map.csv` / `VCF_Sizing_Fleet_DR_Filled.csv`.
 
-### Not Fleet DR mgmt-app minimum (No)
-| Component | Fleet DR |
-|---|---|
-| Management / Workload Domain AVI | No |
-| Management / Workload Domain SSP | No |
-| vDefend and AVI Licensing Hub | No |
-| Workload Domain vCenter | No |
-| Workload Domain NSX Managers | No |
-| Real-time Metrics | No |
+### Must size at recovery (foundation + P&R + redeploy)
+vCenter (mgmt), NSX Managers (mgmt), NSX Edges (mgmt), VNA (mgmt), SDDC Manager, License Server, Cloud Proxy, MS runtime control/worker, Protection Blueprint Requirements, VCF Operations (`Protect`), Ops for Networks + collector (`Protect`), VCF Automation (`Redeploy`).
 
-### Automation note
+### Restore only (do not pre-deploy)
+Identity Broker, Offline Software Depot, Log Management (, Salt / Fleet LCM if present).
 
-Automation is **not** restore-only. Broadcom: deploy a **new** Automation instance on the recovery site, then restore from backup. Use `Redeploy`.
+### No (not DR mgmt-app minimum)
+Avi, SSP (mgmt + WLD), WLD vCenter / NSX, Real-time Metrics, Licensing Hub.
 
-### Helper files
-- `VCF_Sizing_Fleet_DR_Map.csv` — one row per component
-- `VCF_Sizing_Fleet_DR_Filled.csv` — full sizing sheet with column J filled
+## App behavior notes
+- DR-only **ignores** Primary Required when deciding checkboxes — only Fleet DR / heuristics.
+- Red callout = Primary Required ∪ pre–DR selections ∪ DR-min sized rows (one site) — always ≥ blue DR-minimum target.
+- Sheet Location typo `Serices` is normalized to `Services`; SSP mgmt and WLD are separate optional groups.

@@ -8195,12 +8195,19 @@ const VCFApp = () => {
         if (/fleet\s*lifecycle|fleet\s*lcm/.test(n)) return 'RESTORE_ONLY';
         // Log Management is restored onto recovery VCFMS — do not pre-size a second LM stack.
         if (/log\s*management|vcf\s*logs/.test(n)) return 'RESTORE_ONLY';
+        // Workload-domain and optional add-ons are not Fleet DR mgmt-app minimum.
         if (/workload\s*domain/.test(n)) return 'EXCLUDE';
-        if (/avi|load\s*balancer|hcx|data\s*services|\bdsm\b|security\s*services|\bssp\b|vdefend|private\s*ai|licensing\s*hub|real-?time\s*metrics|protection\s*blueprint/.test(n)) return 'EXCLUDE';
+        if (/avi|load\s*balancer|hcx|data\s*services|\bdsm\b|security\s*services|\bssp\b|vdefend|licensing\s*hub|real-?time\s*metrics/.test(n)) return 'EXCLUDE';
         if (msRuntimeRole_(compName)) return 'FOUNDATION';
         if (/operations\s+for\s+networks/.test(n)) return 'PROTECT';
         if (/vcf\s*operations|vrealize\s*operations/.test(n) && !/networks/.test(n)) return 'PROTECT';
         if (/automation/.test(n)) return 'REDEPLOY';
+        // Recovery VCF instance still needs a management domain + P&R capacity + MS host.
+        if (/protection\s*blueprint/.test(n)) return 'FOUNDATION';
+        if (/management\s*domain\s*vcenter/.test(n)) return 'FOUNDATION';
+        if (/management\s*domain\s*nsx\s*managers/.test(n)) return 'FOUNDATION';
+        if (/management\s*domain\s*nsx\s*edges/.test(n)) return 'FOUNDATION';
+        if (/virtual\s*network\s*appliance/.test(n)) return 'FOUNDATION';
         if (/sddc\s*manager|license\s*server|cloud\s*proxy/.test(n)) return 'FOUNDATION';
         return 'DEFAULT';
       };
@@ -8228,10 +8235,10 @@ const VCFApp = () => {
           if (!config) return;
           const role = fleetDrRoleForSelection_(name, config);
           let enabled = false;
-          // Restore-only always wins over sheet Required=Yes (do not pre-deploy on recovery VCFMS).
+          // DR-only follows Fleet DR column / heuristics only — Primary Required (Required=Yes) does not force recovery sizing.
           if (role === 'RESTORE_ONLY' || role === 'EXCLUDE') enabled = false;
           else if (fleetDrRoleShouldSize_(role)) enabled = true;
-          else enabled = !!config.isMandatory && role !== 'RESTORE_ONLY';
+          else enabled = false;
           next[name] = { ...config, enabled, fleetDrRole: role };
         });
         // Ops-for-Networks collector follows parent when DR-sizing Networks.
@@ -8244,6 +8251,31 @@ const VCFApp = () => {
             next[collectorKey] = { ...next[collectorKey], enabled: parentOn || fleetDrRoleShouldSize_(collRole), fleetDrRole: collRole === 'DEFAULT' ? 'PROTECT' : collRole };
           }
         }
+        return next;
+      };
+
+      // Primary-estate ceiling: Primary Required ∪ pre–DR-only selections ∪ DR-min sized rows (so ceiling never undershoots DR-min).
+      const buildPrimaryEstateSelections_ = (snap, drCurrent) => {
+        const names = new Set([
+          ...Object.keys(snap || {}),
+          ...Object.keys(drCurrent || {}),
+        ]);
+        const next = {};
+        names.forEach((name) => {
+          const base = snap?.[name] || drCurrent?.[name];
+          if (!base) return;
+          const role = fleetDrRoleForSelection_(name, base);
+          const enabled = !!(
+            snap?.[name]?.enabled
+            || (base.isMandatory && role !== 'RESTORE_ONLY')
+            || drCurrent?.[name]?.enabled
+          );
+          next[name] = {
+            ...base,
+            enabled,
+            profile: snap?.[name]?.profile || drCurrent?.[name]?.profile || base.profile,
+          };
+        });
         return next;
       };
 
@@ -8403,12 +8435,15 @@ const VCFApp = () => {
          
          return arr.map((r, index) => {
             let g = (getSheetCol(r, ['location', 'group', 'category', 'note']) || 'Default Group').trim();
-            g = g.replace(/Securtiy/ig, 'Security').replace(/Serivces/ig, 'Services');
-            if (g.toLowerCase().includes('security services platform') || g.toLowerCase().includes('ssp')) {
-                g = 'Security Services Platform (SSP)';
+            g = g.replace(/Securtiy/ig, 'Security').replace(/Serivces/ig, 'Services').replace(/Serices/ig, 'Services');
+            if (/security\s+services\s+platform/i.test(g) || /\bssp\b/i.test(g)) {
+                if (/workload/i.test(g)) g = 'Security Services Platform · Workload Domain';
+                else if (/management/i.test(g)) g = 'Security Services Platform · Management Domain';
+                else g = 'Security Services Platform (SSP)';
             }
 
-            let requiredRaw = getSheetCol(r, ['required']);
+            // Primary instance mandatory (col I). Aliases: Required | Primary Required
+            let requiredRaw = getSheetCol(r, ['primary required', 'primary_required', 'required']);
             let isMandatory = requiredRaw && String(requiredRaw).toLowerCase().includes('yes');
 
             let componentName = (getSheetCol(r, ['component', 'appliance', 'name', 'item']) || `Item-${index}`).trim();
@@ -8505,6 +8540,16 @@ const VCFApp = () => {
           setWlDomainCount(n);
           setSizingSelections(prev => {
               if (!prev || Object.keys(prev).length === 0) return prev;
+              // DR-minimum never sizes WLD catalog rows (Fleet DR excludes workload-domain appliances).
+              if (placementPayloadScope === 'DR_MINIMUM') {
+                  const next = { ...prev };
+                  Object.keys(next).forEach(k => {
+                      if (isWldCatalogComponent(k) && next[k] && !next[k].isMandatory) {
+                          next[k] = { ...next[k], enabled: false };
+                      }
+                  });
+                  return next;
+              }
               const next = { ...prev };
               if (n === 0) {
                   Object.keys(next).forEach(k => {
@@ -8524,6 +8569,11 @@ const VCFApp = () => {
           const compLower = (comp || '').toLowerCase();
           const isWldVc = isWldVcenterComponent(comp);
           const isWldComp = isWldCatalogComponent(comp);
+
+          if (placementPayloadScope === 'DR_MINIMUM' && isWldComp && checked) {
+              // Keep WLD out of recovery-site minimum payload.
+              return;
+          }
 
           if (isWldVc && !checked) {
               setWlDomainCount(0);
@@ -8555,7 +8605,7 @@ const VCFApp = () => {
                           next[k] = { ...next[k], enabled: false };
                       }
                   });
-              } else if (isWldComp && checked) {
+              } else if (isWldComp && checked && placementPayloadScope !== 'DR_MINIMUM') {
                   const vcKey = findWldVcenterKey(next);
                   if (vcKey) next[vcKey] = { ...next[vcKey], enabled: true };
               }
@@ -10136,13 +10186,14 @@ const architectureMath = useMemo(() => {
          targetStorage = primary.targetStorage;
          resolvedComponents.push(...primary.resolvedComponents);
 
-         // Full-estate ceiling for DR_MINIMUM: ONE recovery site sized like the pre–DR-only estate
-         // (not × both sites). That should land near production (~408), not ~2×.
+         // Primary-estate ceiling for DR_MINIMUM: Primary Required ∪ pre–DR selections ∪ DR-min sized
+         // rows at ONE site. Guarantees ceiling ≥ DR-min (fixes 208 vs 252 inversion).
          let fullEstatePayload = null;
          if (drMinimumSizing) {
            const snap = preDrMinimumSelectionsRef.current || sizingSelections;
+           const fullSel = buildPrimaryEstateSelections_(snap, sizingSelections);
            const fullWl = preDrMinimumWlCountRef.current != null ? preDrMinimumWlCountRef.current : wlDomainCount;
-           const full = resolveEnabledPayload_(snap, {
+           const full = resolveEnabledPayload_(fullSel, {
              multiInstance: false,
              wlCount: fullWl,
              skipMsPair: true,
@@ -13597,7 +13648,7 @@ const architectureMath = useMemo(() => {
             if (n.includes('fleet')) return 20;
             if (n.includes('management domain')) return 30;
             if (n.includes('workload domain')) return 40;
-            return 70;
+            return 50;
          };
          const groupings = [...new Set(normalizedSizing.map(r => r.group))].sort((a, b) => {
              const ra = placementGroupRank_(a);
@@ -13848,7 +13899,7 @@ const architectureMath = useMemo(() => {
                                           if (!sel) return null;
                                           const drRole = fleetDrCatalogRole_(comp, sel);
                                           const roleBadge = placementPayloadScope === 'DR_MINIMUM' ? fleetDrRoleBadge_(drRole) : null;
-                                          const drLocked = placementPayloadScope === 'DR_MINIMUM' && (drRole === 'RESTORE_ONLY' || fleetDrRoleShouldSize_(drRole));
+                                          const drLocked = placementPayloadScope === 'DR_MINIMUM' && (drRole === 'RESTORE_ONLY' || drRole === 'EXCLUDE' || fleetDrRoleShouldSize_(drRole));
                                           return (
                                              <div key={comp} className="border-l-2 border-slate-300 dark:border-slate-600 pl-3">
                                                 <div className="flex items-start justify-between gap-2">
@@ -13862,7 +13913,7 @@ const architectureMath = useMemo(() => {
                                                    </label>
                                                    <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
                                                      {sel.isMandatory && !(placementPayloadScope === 'DR_MINIMUM' && drRole === 'RESTORE_ONLY') && (
-                                                       <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded uppercase font-bold">Req</span>
+                                                       <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded uppercase font-bold" title="Primary Required — mandatory on the primary VCF instance (sheet Required / Primary Required column)">Primary</span>
                                                      )}
                                                      {roleBadge && (
                                                        <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold ${roleBadge.className}`} title={roleBadge.title}>{roleBadge.text}</span>
@@ -13893,9 +13944,9 @@ const architectureMath = useMemo(() => {
                                <div className="min-w-0">
                                  <div className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-300 flex items-center gap-1">
                                    Placement payload scope
-                                   <SizerInfo text="DR only auto-selects Fleet Disaster Recovery minimums: Ops + Ops for networks (Protection &amp; Recovery — size at DR), VCF Automation (redeploy new instance + restore — size at DR), and management-domain foundation / VCFMS runtime. Identity Broker, Software Depot, Salt, Fleet Lifecycle, and Log Management are restore-only onto recovery VCFMS — do not pre-deploy. Optional sheet column fleet_dr (Yes / No / Restore / Redeploy / Protect) overrides heuristics." href={SIZER_DOCS.fleetDr.href} hrefLabel="Fleet DR blueprint" />
+                                   <SizerInfo text="DR only uses the Fleet DR sheet column (Yes / Protect / Redeploy / Restore / No) — not Primary Required. Size at recovery: Ops + Ops for networks (P&amp;R), Automation (redeploy), management-domain foundation (vCenter, NSX Managers/Edges/VNA, SDDC Manager, License, Cloud Proxy, MS runtime, Protection Blueprint). Restore-only stays off: Identity Broker, Depot, Log Management, Salt, Fleet LCM. Workload-domain and Avi/SSP stay out of DR-minimum." href={SIZER_DOCS.fleetDr.href} hrefLabel="Fleet DR blueprint" />
                                  </div>
-                                 <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">Use DR only when sizing the recovery VCF instance. Fit validation sizes that site alone; the red callout is the single-site full-estate ceiling (same order of magnitude as production), not both sites added together.</p>
+                                 <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed"><strong>Required</strong> = primary VCF instance. <strong>Fleet DR</strong> = recovery-site minimum. Fit validation sizes the recovery site alone; the red callout is the primary-estate ceiling (always ≥ DR-min).</p>
                                </div>
                              </div>
                              <div className="flex flex-wrap gap-4 mt-3">
@@ -13935,7 +13986,7 @@ const architectureMath = useMemo(() => {
                                  onClick={(e) => e.stopPropagation()}
                                >
                                  <div>
-                                   <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Optional add-ons · Avi / SSP / other</div>
+                                   <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Optional add-ons · Avi / SSP (mgmt + WLD) / other</div>
                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{placementPayloadScope === 'DR_MINIMUM' ? 'Excluded from DR-minimum payload (still listed for reference).' : 'Collapsed by default so Fleet and domain placement stay on screen.'}</p>
                                  </div>
                                  <span className="text-xs font-black text-slate-400 dark:text-slate-500 transition-transform group-open/opt:rotate-90">▶</span>
@@ -13964,14 +14015,14 @@ const architectureMath = useMemo(() => {
 
                   {architectureMath?.drMinimumSizing && architectureMath?.fullEstatePayload && (
                     <div className="mt-4 mb-2 rounded-xl border-2 border-rose-500 dark:border-rose-600 bg-rose-50 dark:bg-rose-950/40 p-4 shadow-sm">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-rose-800 dark:text-rose-300">Full estate in DR can be up to</div>
+                      <div className="text-[10px] font-black uppercase tracking-widest text-rose-800 dark:text-rose-300">Primary estate ceiling (single site)</div>
                       <div className="flex flex-wrap gap-6 mt-2 text-rose-950 dark:text-rose-100">
                         <div><span className="text-2xl font-black">{architectureMath.fullEstatePayload.targetVcpu || 0}</span> <span className="text-xs font-bold uppercase tracking-widest text-rose-700 dark:text-rose-300">vCPU</span></div>
                         <div><span className="text-2xl font-black">{architectureMath.fullEstatePayload.targetRam || 0}</span> <span className="text-xs font-bold uppercase tracking-widest text-rose-700 dark:text-rose-300">GB RAM</span></div>
                         <div><span className="text-2xl font-black">{((architectureMath.fullEstatePayload.targetStorage || 0) / 1024).toFixed(1)}</span> <span className="text-xs font-bold uppercase tracking-widest text-rose-700 dark:text-rose-300">TB Storage</span></div>
                       </div>
                       <p className="text-[11px] text-rose-900 dark:text-rose-200 mt-2 leading-relaxed">
-                        Single recovery-site ceiling if DR must host the same full estate you had selected before DR-only (should track production, e.g. ~408 vCPU — not both sites summed). Fit validation below uses the <strong>DR-minimum</strong> recovery payload only.
+                        Primary Required ∪ services selected before DR-only ∪ DR-min sized rows (one site). Always ≥ the blue DR-minimum target. Sheet columns: <strong>Required / Primary Required</strong> = primary instance; <strong>Fleet DR</strong> = recovery-site minimum.
                       </p>
                     </div>
                   )}
