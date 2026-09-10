@@ -699,6 +699,21 @@
       green: 'No issue observed',
       gray: 'Not validated'
     };
+    const READINESS_TAB_HELP = {
+      estate: 'Facts and scope only — no red/amber verdicts here. Use the tree to include or exclude inventory before the other tabs assess it.',
+      summary: 'Rolled-up Action needed and Discuss findings across evidence tabs. Click a finding to jump to its source tab. Green never means Broadcom-certified support.',
+      hardware: 'Action needed: CPU/HCI that looks incompatible (e.g. Nutanix, clearly legacy). Discuss: CPU series needs BCG confirmation — family alone cannot prove the server model is supported. Storage adapters use the same pattern.',
+      hostSetup: 'Action needed: disconnected / not responding hosts, or missing NTP/DNS configuration in RVTools. Discuss: maintenance mode, or connection state blank/unknown (export incomplete — not proof the host is healthy). Forward/reverse DNS match and clock skew are Customer Checks.',
+      clusters: 'Action needed: DRS not Fully Automated, or HA disabled. Discuss: EVC missing/disabled, mixed ESXi builds, mixed hardware, or fewer than 3 hosts. Host count is in the Host(s) column; vLCM is a Customer Check.',
+      vms: 'Action needed: very old VM hardware or Tools that typically block upgrades. Discuss: guest OS not clearly listed, Tools stopped/outdated, e1000 adapters, or hardware that should be raised to vmx-17+.',
+      media: 'Action needed: connected CD/DVD or floppy (especially client/host-local media) — common vMotion and rolling-upgrade blockers. Discuss: snapshots present; Action needed when a snapshot is older than 7 days.',
+      storage: 'Action needed: critically low free space, inaccessible stores, or unsupported formats. Discuss: low free space warnings or path redundancy concerns. Gray: multipathing cannot be assessed without vMultiPath.',
+      networking: 'Action needed: vSphere Standard Switches (must move to vDS), or VMkernel on a standard switch. Discuss: host uplink with no switch reported (incomplete vNIC data). Missing VMkernel IP is Discuss — confirm whether the adapter is unused, DHCP, or an incomplete export.',
+      inventory: 'Action needed: duplicate MAC/BIOS/instance UUID, duplicate registrations, orphaned or inaccessible VMs, disconnected hosts. Discuss: missing inventory fields, VMs on unexpected hosts, or softer vHealth findings (e.g. zombie VMDK cleanup). Orphans block clean migration; zombies usually need datastore hygiene discussion first.',
+      special: 'Action needed: RDMs, multi-writer disks, passthrough/SR-IOV/vGPU, Fault Tolerance, SCSI bus sharing, host-local media. Discuss: encryption/vTPM, large reservations, or affinity/pinning — plan individually, may still move with the right design.',
+      quality: 'Gray/amber mean sheets or categories were not fully assessable. Missing data must never look like a pass. Re-export with the listed RVTools tabs when something is Not validated.',
+      customer: 'Non-RVTools questions (BCG, DNS match, NTP skew, vLCM, certificates, backups, physical networking). These never receive a green RVTools verdict — mark Customer confirmed / Needs confirmation / N/A yourself.'
+    };
     const RV_EXPECTED_SHEETS = ['vInfo', 'vHost', 'vCluster', 'vHBA', 'vTools', 'vNetwork', 'vDatastore', 'dvSwitch', 'vSwitch', 'vCD', 'vFloppy', 'vSnapshot', 'vMemory', 'vDisk', 'vHealth', 'vMultiPath', 'vNIC', 'vPort', 'vSC_VMK', 'vSCSI', 'vGPU'];
     const CUSTOMER_CHECK_ITEMS = [
       { id: 'bcg', prompt: 'Has the complete server configuration been confirmed in the Broadcom Compatibility Guide?' },
@@ -760,8 +775,8 @@
       add(drsHits.length ? 'red' : null, drsHits.length ? (drsHits.length === 1 ? 'Cluster DRS is disabled or not Fully Automated' : `${drsHits.length} clusters do not have Fully Automated DRS`) : '', 'VCF placement requires Fully Automated DRS', 'Can DRS be enabled before deployment?', 'vCluster', 'clusters');
       const haHits = (results.clusters || []).filter(r => r.status === 'red' && /HA: (false|no|disabled)/i.test(r.details));
       add(haHits.length ? 'red' : null, haHits.length ? `${haHits.length} cluster(s) have HA disabled` : '', 'VCF clusters expect HA for host-failure protection', 'Can HA be enabled on these clusters?', 'vCluster', 'clusters');
-      const evcHits = yelOf(results.clusters).filter(r => /EVC: (not reported|disabled|false|none)/i.test(r.details));
-      add(evcHits.length ? 'yellow' : null, evcHits.length ? `${evcHits.length} cluster(s) have EVC off or unreported` : '', 'Mixed CPU generations are easier to manage with EVC', 'Can EVC be enabled at a generation all hosts support?', 'vCluster', 'clusters');
+      const evcHits = (results.clusters || []).filter(r => /EVC: (not reported|disabled|false|none)/i.test(r.details || ''));
+      add(evcHits.length ? 'yellow' : null, evcHits.length ? `${evcHits.length} cluster(s) have EVC off or unreported` : '', 'Mixed CPU generations are easier to manage with EVC — missing EVC is Discuss even when DRS already needs action', 'Can EVC be enabled at a generation all hosts support?', 'vCluster', 'clusters');
       const media = redOf(results.cdDrives);
       add(media.length ? 'red' : null, media.length ? `${media.length} VM${media.length === 1 ? ' has' : 's have'} connected media` : '', 'Some backing types can prevent migration', 'Are these using local/client media or shared ISOs?', 'vCD', 'media');
       const cpuY = yelOf(results.cpus);
@@ -9621,9 +9636,10 @@ const VCFApp = () => {
           const inMaint = rvTruthy(maintRaw) || /yes|true|on/i.test(String(maintRaw));
           const conn = String(connRaw || '').toLowerCase();
           const disconnected = /notresponding|not responding|disconnected|inaccessible/i.test(conn);
+          const connUnknown = !connRaw || /unknown|n\/a|^$/i.test(String(connRaw).trim());
           let hostStatus = (ntpOk && dnsOk) ? 'green' : 'red';
           if (disconnected) hostStatus = 'red';
-          else if (inMaint && hostStatus !== 'red') hostStatus = 'yellow';
+          else if ((inMaint || connUnknown) && hostStatus !== 'red') hostStatus = 'yellow';
           const hostBits = [
             `ESXi ${esxVersion || 'unknown'}${esxBuild ? ` build ${esxBuild}` : ''}`,
             `Connection: ${connRaw || 'unknown'}`,
@@ -9924,13 +9940,13 @@ if (rvData.vHBA) {
               mixedBuilds ? `Mixed builds: ${builds.join(' · ')}` : (builds[0] ? `Build: ${builds[0]}` : 'Build: n/a'),
               mixedHw ? `Hardware mixed: ${[...cpus, ...oems].slice(0, 3).join(' · ')}` : (oems[0] || cpus[0] || 'Hardware consistent')
             ];
-            clusterRes.push({ id: genId(), name: clName, cluster: clName, host: 'N/A', details: bits.join(' | '), status });
+            clusterRes.push({ id: genId(), name: clName, cluster: clName, host: String(hostCount), details: bits.join(' | '), status });
           });
         }
         Object.keys(hostIndex).forEach(clName => {
           if (clusterRes.some(r => r.name === clName)) return;
           const hostsInCluster = hostIndex[clName] || [];
-          clusterRes.push({ id: genId(), name: clName, cluster: clName, host: 'N/A', details: `Cluster row missing from vCluster · Hosts: ${hostsInCluster.length} (DRS/HA/EVC not assessed)`, status: rvSheetPresent(rvData, 'vCluster') ? 'yellow' : 'gray' });
+          clusterRes.push({ id: genId(), name: clName, cluster: clName, host: String(hostsInCluster.length), details: `Cluster row missing from vCluster · Hosts: ${hostsInCluster.length} (DRS/HA/EVC not assessed)`, status: rvSheetPresent(rvData, 'vCluster') ? 'yellow' : 'gray' });
         });
 
         if (rvData.vCD) {
@@ -10087,6 +10103,7 @@ if (rvData.vHBA) {
           seenVmk.add(key);
           let status = 'green';
           if (sw && /^vswitch/i.test(String(sw))) status = 'red';
+          else if (!ip) status = 'yellow';
           vmkRes.push({ id: genId(), name: pg, cluster: getCol(row, ['cluster']), host: hostName, details: `${ip || 'no IP'}${sw ? ` · ${sw}` : ''}${mtu ? ` · MTU ${mtu}` : ''}`, status });
         });
 
@@ -10094,7 +10111,11 @@ if (rvData.vHBA) {
           rvData.vHealth.forEach(h => {
             const msg = getCol(h, ['message', 'health', 'name', 'description']) || 'Health finding';
             const name = getCol(h, ['vm', 'host', 'name', 'object']) || 'Inventory';
-            inventoryRes.push({ id: genId(), name, cluster: getCol(h, ['cluster']), host: getCol(h, ['host', 'hostname']), details: String(msg), status: /error|fail|duplicate|orphan/i.test(String(msg)) ? 'red' : 'yellow' });
+            const msgL = String(msg).toLowerCase();
+            let status = 'yellow';
+            if (/error|fail|duplicate|orphan|inaccessible/i.test(msgL)) status = 'red';
+            else if (/zombie|unused|abandoned/i.test(msgL)) status = 'yellow';
+            inventoryRes.push({ id: genId(), name, cluster: getCol(h, ['cluster']), host: getCol(h, ['host', 'hostname']), details: String(msg), status });
           });
         }
 
@@ -12713,9 +12734,20 @@ const architectureMath = useMemo(() => {
                               const counts = countTabIssues(readinessResults, tab.keys);
                               const badgeN = tab.id === 'quality' ? counts.gray + counts.issues : counts.issues;
                               const badgeCrit = counts.red;
+                              const help = READINESS_TAB_HELP[tab.id];
                               return (
                            <button key={tab.id} onClick={() => { setReadinessTab(tab.id); setTablePage(0); }} className={`py-2 px-4 font-semibold text-sm rounded transition-colors duration-200 whitespace-nowrap inline-flex items-center gap-2 ${readinessTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 hover:bg-slate-100'}`}>
                               {tab.label}
+                              {help && (
+                                <span
+                                  className={`inline-flex ${readinessTab === tab.id ? '[&_svg]:text-blue-100 hover:[&_svg]:text-white' : ''}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => e.stopPropagation()}
+                                  title="What this tab calls out"
+                                >
+                                  <SizerInfo text={help} />
+                                </span>
+                              )}
                               {tab.id !== 'estate' && tab.id !== 'customer' && badgeN > 0 && (
                                 <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${badgeCrit ? 'bg-red-600 text-white' : (counts.issues ? 'bg-amber-500 text-white' : 'bg-slate-500 text-white')}`}>{badgeN}</span>
                               )}
@@ -12801,15 +12833,15 @@ const architectureMath = useMemo(() => {
                         {readinessTab === 'hostSetup' && (
                            <div>
                               <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Host Setup</h3>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Host Config plus ESX version/build, maintenance mode, and disconnected hosts. Forward/reverse DNS match and actual NTP skew are Customer Checks — RVTools only shows configured servers.</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Host Config plus ESX version/build, maintenance mode, and disconnected hosts. Connection blank/unknown is Discuss (incomplete evidence). Forward/reverse DNS match and actual NTP skew are Customer Checks — RVTools only shows configured servers.</p>
                               {renderTable(readinessResults.hostConfig, ['Asset Name', 'Cluster', 'Host(s)', 'Host setup details', 'Result'], 'hostConfig')}
                            </div>
                         )}
                         {readinessTab === 'clusters' && (
                            <div>
                               <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Clusters</h3>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">DRS (Fully Automated required), HA, EVC, host count, mixed builds, and hardware consistency. vLCM image management is a Customer Check.</p>
-                              {renderTable(readinessResults.clusters, ['Asset Name', 'Cluster', 'Host(s)', 'Cluster settings', 'Result'], 'clusters')}
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">DRS (Fully Automated required), HA, EVC, host count, mixed builds, and hardware consistency. <span className="font-semibold">EVC not reported</span> is Discuss (amber), not a green pass. Host count is shown in Host(s). vLCM image management is a Customer Check.</p>
+                              {renderTable(readinessResults.clusters, ['Asset Name', 'Cluster', 'Host count', 'Cluster settings', 'Result'], 'clusters')}
                            </div>
                         )}
                         {readinessTab === 'vms' && (
@@ -12862,10 +12894,12 @@ const architectureMath = useMemo(() => {
                               </div>
                               <div>
                                  <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Host uplinks</h3>
+                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">No switch reported is Discuss — often incomplete <span className="font-mono">vNIC</span> data, not proof the uplink is wrong.</p>
                                  {renderTable(readinessResults.hostNics, ['Asset Name', 'Cluster', 'Host(s)', 'Adapter / uplink', 'Result'], 'hostNics')}
                               </div>
                               <div>
                                  <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">VMkernel placement</h3>
+                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">VMkernel on a standard switch is Action needed. Missing IP is Discuss — confirm unused adapter vs incomplete export.</p>
                                  {renderTable(readinessResults.vmkernel, ['Asset Name', 'Cluster', 'Host(s)', 'VMkernel details', 'Result'], 'vmkernel')}
                               </div>
                            </div>
@@ -12873,7 +12907,7 @@ const architectureMath = useMemo(() => {
                         {readinessTab === 'inventory' && (
                            <div>
                               <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Inventory Issues</h3>
-                              <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">RVTools found inventory records that may need cleanup before migration. Duplicate MAC/UUID and orphaned VM checks belong here.</p>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">RVTools found inventory records that may need cleanup before migration. Duplicate MAC/UUID and orphaned/inaccessible VMs are Action needed; softer findings such as zombie VMDKs are Discuss.</p>
                               {renderTable(readinessResults.inventoryIssues, ['Asset Name', 'Cluster', 'Host(s)', 'What we found', 'Result'], 'inventoryIssues')}
                            </div>
                         )}
