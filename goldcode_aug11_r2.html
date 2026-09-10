@@ -674,7 +674,7 @@
       if (!obj) return '';
       const keyMap = {};
       Object.keys(obj).forEach(k => {
-        const clean = k.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(vinfo|vhost|vhba|vtools|vnetwork|vnic|vdatastore|dvswitch|vcd|vsnapshot|vcluster|vmemory)/, '');
+        const clean = k.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(vinfo|vhost|vhba|vtools|vnetwork|vnic|vdatastore|dvswitch|dvport|vscvmk|vmultipath|vhealth|vfloppy|vdisk|vscsi|vgpu|vsource|vfileinfo|vcd|vsnapshot|vcluster|vmemory|vport)/, '');
         keyMap[clean] = k;
       });
       for (const name of keys) {
@@ -691,6 +691,114 @@
     const rvClusterName = (row) => getCol(row, ['cluster']);
     const rvVcenterName = (row) => getCol(row, ['visdkserver', 'viserver', 'vcenter', 'vcenterserver', 'virtualcenter', 'server']) || '(no vCenter)';
     const rvDatacenterName = (row) => getCol(row, ['datacenter', 'dc', 'site']) || '(no datacenter)';
+    const rvTruthy = (v) => /^(true|yes|1|enabled|on)$/i.test(String(v ?? '').trim());
+    const rvSheetPresent = (rv, key) => !!(rv && (rv._present?.[key] || (Array.isArray(rv[key]) && rv[key].length > 0)));
+    const READINESS_STATUS_LABEL = {
+      red: 'Action needed',
+      yellow: 'Discuss',
+      green: 'No issue observed',
+      gray: 'Not validated'
+    };
+    const RV_EXPECTED_SHEETS = ['vInfo', 'vHost', 'vCluster', 'vHBA', 'vTools', 'vNetwork', 'vDatastore', 'dvSwitch', 'vSwitch', 'vCD', 'vFloppy', 'vSnapshot', 'vMemory', 'vDisk', 'vHealth', 'vMultiPath', 'vNIC', 'vPort', 'vSC_VMK', 'vSCSI', 'vGPU'];
+    const CUSTOMER_CHECK_ITEMS = [
+      { id: 'bcg', prompt: 'Has the complete server configuration been confirmed in the Broadcom Compatibility Guide?' },
+      { id: 'dns', prompt: 'Do forward and reverse DNS records match?' },
+      { id: 'ntp', prompt: 'Is actual NTP clock skew within tolerance?' },
+      { id: 'vlcm', prompt: 'Is the cluster managed with a vLCM image?' },
+      { id: 'vcha', prompt: 'Is vCenter HA disabled?' },
+      { id: 'certs', prompt: 'Are certificates healthy?' },
+      { id: 'backups', prompt: 'Are vCenter and configuration backups current?' },
+      { id: 'network', prompt: 'Are required VLANs, MTU, routing, and firewall ports validated?' },
+      { id: 'vsan', prompt: 'Is vSAN health green with no active resynchronization?' },
+      { id: 'mgmt', prompt: 'Are management-component resources and IP addresses reserved?' },
+      { id: 'license', prompt: 'Is licensing and software-depot access ready?' },
+      { id: 'path', prompt: 'Has the exact source-to-VCF 9.1 upgrade/convergence path been verified?' }
+    ];
+    const emptyCustomerChecks = () => CUSTOMER_CHECK_ITEMS.map((item) => ({ ...item, status: 'needs_confirmation', notes: '' }));
+    const emptyReadinessResults = () => ({
+      cpus: [], hostConfig: [], guestOs: [], ioDevices: [], vNics: [], vmTools: [], vmHw: [],
+      datastores: [], dvSwitches: [], cdDrives: [], snapshots: [], clusters: [], software: [],
+      inventoryIssues: [], specialVms: [], dataQuality: [], hostNics: [], vmkernel: []
+    });
+    const READINESS_TAB_GROUPS = {
+      hardware: ['cpus', 'ioDevices'],
+      vms: ['guestOs', 'vmHw', 'vmTools', 'vNics'],
+      media: ['snapshots', 'cdDrives'],
+      storage: ['datastores'],
+      networking: ['dvSwitches', 'hostNics', 'vmkernel'],
+      attentionKeys: ['cpus', 'ioDevices', 'hostConfig', 'clusters', 'guestOs', 'vmHw', 'vmTools', 'vNics', 'snapshots', 'cdDrives', 'datastores', 'dvSwitches', 'inventoryIssues', 'specialVms', 'hostNics', 'vmkernel', 'software']
+    };
+    const countTabIssues = (results, keys) => {
+      const rows = (keys || []).flatMap(k => results?.[k] || []);
+      const red = rows.filter(r => r.status === 'red').length;
+      const yellow = rows.filter(r => r.status === 'yellow').length;
+      const gray = rows.filter(r => r.status === 'gray').length;
+      return { red, yellow, gray, issues: red + yellow };
+    };
+    const statusSelectClass = (status) => {
+      if (status === 'green') return 'bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200 hover:bg-emerald-300 dark:hover:bg-emerald-800';
+      if (status === 'yellow') return 'bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 hover:bg-amber-300 dark:hover:bg-amber-800';
+      if (status === 'gray') return 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700';
+      return 'bg-red-200 dark:bg-red-900 text-red-900 dark:text-red-200 hover:bg-red-300 dark:hover:bg-red-800';
+    };
+    const rowStatusClass = (status) => {
+      if (status === 'green') return 'bg-emerald-50 dark:bg-emerald-950/40';
+      if (status === 'yellow') return 'bg-amber-50 dark:bg-amber-950/40';
+      if (status === 'gray') return 'bg-slate-50 dark:bg-slate-900';
+      return 'bg-red-50 dark:bg-red-950/40';
+    };
+    const buildAttentionFindings = (results) => {
+      const out = [];
+      const add = (status, found, why, ask, evidence, tab) => {
+        if (!found) return;
+        out.push({ id: `${tab}-${out.length}`, status, found, why, ask, evidence, tab });
+      };
+      const redOf = (arr) => (arr || []).filter(r => r.status === 'red');
+      const yelOf = (arr) => (arr || []).filter(r => r.status === 'yellow');
+      const grayOf = (arr) => (arr || []).filter(r => r.status === 'gray');
+          const drsHits = (results.clusters || []).filter(r => r.status === 'red');
+      add(drsHits.length ? 'red' : null, drsHits.length ? (drsHits.length === 1 ? 'Cluster DRS is disabled or not Fully Automated' : `${drsHits.length} clusters do not have Fully Automated DRS`) : '', 'VCF placement requires Fully Automated DRS', 'Can DRS be enabled before deployment?', 'vCluster', 'clusters');
+      const haHits = (results.clusters || []).filter(r => r.status === 'red' && /HA: (false|no|disabled)/i.test(r.details));
+      add(haHits.length ? 'red' : null, haHits.length ? `${haHits.length} cluster(s) have HA disabled` : '', 'VCF clusters expect HA for host-failure protection', 'Can HA be enabled on these clusters?', 'vCluster', 'clusters');
+      const evcHits = yelOf(results.clusters).filter(r => /EVC: (not reported|disabled|false|none)/i.test(r.details));
+      add(evcHits.length ? 'yellow' : null, evcHits.length ? `${evcHits.length} cluster(s) have EVC off or unreported` : '', 'Mixed CPU generations are easier to manage with EVC', 'Can EVC be enabled at a generation all hosts support?', 'vCluster', 'clusters');
+      const media = redOf(results.cdDrives);
+      add(media.length ? 'red' : null, media.length ? `${media.length} VM${media.length === 1 ? ' has' : 's have'} connected media` : '', 'Some backing types can prevent migration', 'Are these using local/client media or shared ISOs?', 'vCD', 'media');
+      const cpuY = yelOf(results.cpus);
+      add(cpuY.length ? 'yellow' : null, cpuY.length ? `${cpuY.length} CPUs need verification` : '', 'CPU family alone cannot prove server support', 'Has the complete server model been checked in the BCG?', 'vHost', 'hardware');
+      const cpuR = redOf(results.cpus);
+      add(cpuR.length ? 'red' : null, cpuR.length ? `${cpuR.length} servers look like hardware blockers` : '', 'RVTools observed CPU or HCI that is unlikely to join VCF 9.1', 'Can these hosts be replaced or excluded from scope?', 'vHost', 'hardware');
+      const mp = grayOf(results.datastores).filter(r => /vMultiPath/i.test(r.details));
+      add(mp.length ? 'gray' : null, mp.length ? 'Multipath data was not supplied' : '', 'Storage-path redundancy cannot be assessed', 'Can a new export include `vMultiPath`?', 'Missing sheet', 'storage');
+      const snaps = (results.snapshots || []).filter(r => r.status === 'red' || r.status === 'yellow');
+      add(snaps.length ? (snaps.some(r => r.status === 'red') ? 'red' : 'yellow') : null, snaps.length ? `${snaps.length} VM${snaps.length === 1 ? ' has' : 's have'} snapshots` : '', 'Old snapshots grow, slow storage, and complicate migration', 'Can snapshots older than a few days be consolidated?', 'vSnapshot', 'media');
+      const vss = redOf(results.dvSwitches);
+      add(vss.length ? 'red' : null, vss.length ? `${vss.length} standard switches need migration to vDS` : '', 'VCF 9.x requires Distributed Switches', 'Can networking be moved to a vDS 7+ before upgrade?', 'vSwitch / dvSwitch', 'networking');
+      const ntp = redOf(results.hostConfig).filter(r => /NTP: missing|DNS: missing|disconnected/i.test(r.details));
+      add(ntp.length ? 'red' : null, ntp.length ? `${ntp.length} host${ntp.length === 1 ? ' has' : 's have'} setup problems (NTP, DNS, or connection)` : '', 'Disconnected hosts and missing NTP/DNS block a clean VCF bring-up', 'Can these hosts be repaired or taken out of scope?', 'vHost', 'hostSetup');
+      const inv = (results.inventoryIssues || []).filter(r => r.status === 'red' || r.status === 'yellow');
+      add(inv.length ? (inv.some(r => r.status === 'red') ? 'red' : 'yellow') : null, inv.length ? `${inv.length} inventory records may need cleanup` : '', 'Duplicate MAC/UUID or orphaned VMs confuse migration inventory', 'Can RVTools findings be cleaned in vCenter before migration?', 'vInfo / vNetwork / vHealth', 'inventory');
+      const spec = (results.specialVms || []).filter(r => r.status === 'red' || r.status === 'yellow');
+      add(spec.length ? (spec.some(r => r.status === 'red') ? 'red' : 'yellow') : null, spec.length ? `${spec.length} VMs need individual migration planning` : '', 'RDMs, passthrough, FT, encryption, and similar settings limit where a VM can move', 'Which of these must stay as-is versus be remediated?', 'vInfo / vDisk', 'special');
+      const osY = yelOf(results.guestOs);
+      add(osY.length ? 'yellow' : null, osY.length ? `${osY.length} guest operating systems need discussion` : '', 'Guest OS identity in RVTools is not a support certification', 'Are these versions still required, and are they listed for ESXi 9.1?', 'vInfo', 'vms');
+      const hwR = (results.vmHw || []).filter(r => r.status !== 'green');
+      add(hwR.length ? (hwR.some(r => r.status === 'red') ? 'red' : 'yellow') : null, hwR.length ? `${hwR.length} VMs are below the preferred hardware compatibility version` : '', 'Older VM hardware can block features and rolling upgrades', 'Can hardware versions be raised to vmx-17+?', 'vInfo', 'vms');
+      const tools = (results.vmTools || []).filter(r => r.status !== 'green');
+      add(tools.length ? (tools.some(r => r.status === 'red') ? 'red' : 'yellow') : null, tools.length ? `${tools.length} VMs need VMware Tools attention` : '', 'Out-of-date or stopped Tools complicates guest shutdown and migration', 'Can Tools be upgraded or started before the move?', 'vTools', 'vms');
+      const ds = (results.datastores || []).filter(r => r.status === 'red' || r.status === 'yellow');
+      add(ds.length ? (ds.some(r => r.status === 'red') ? 'red' : 'yellow') : null, ds.length ? `${ds.length} datastores have capacity, type, or access findings` : '', 'Low free space or unsupported formats threaten the move', 'Can capacity be freed or unsupported stores excluded?', 'vDatastore', 'storage');
+      const miss = (results.dataQuality || []).filter(r => r.status === 'gray' || (r.status === 'yellow' && /missing/i.test(r.details)));
+      if (miss.length) add('gray', `${miss.length} assessment categories are incomplete because sheets are missing`, 'Missing RVTools data must not look like a passing result', 'Can a full RVTools export be provided, including optional tabs?', 'Data Quality', 'quality');
+      const rank = { red: 0, yellow: 1, gray: 2 };
+      return out.filter(r => r.status).sort((a, b) => rank[a.status] - rank[b.status]);
+    };
+    const emptyRvSheets = () => ({
+      vInfo: [], vHost: [], vHBA: [], vTools: [], vNetwork: [], vDatastore: [], dvSwitch: [], vSwitch: [],
+      vCD: [], vSnapshot: [], vCluster: [], vMemory: [], vDisk: [], vFloppy: [], vHealth: [], vMultiPath: [],
+      vNIC: [], vPort: [], vSC_VMK: [], vSCSI: [], vGPU: [], vSource: [], vFileInfo: [], dvPort: [],
+      _present: {}, _sheetCounts: {}, _allSheets: [], _exportMeta: { date: '', version: '', files: [] }
+    });
 
     const vcgCpuSeriesOf = (row) => {
       if (!row) return { series: '', releases: '' };
@@ -763,8 +871,8 @@
       const vInfo = (rv.vInfo || []).filter(v => vmOk(rvVmName(v), getCol(v, ['host', 'hostname'])));
       const inVms = new Set(vInfo.map(rvVmName).filter(Boolean));
       const keepHostOrVm = (row) => {
-        const vm = rvVmName(row) || getCol(row, ['vmname']);
-        const host = rvHostName(row);
+        const vm = getCol(row, ['vm', 'vmname']);
+        const host = getCol(row, ['host', 'hostname']);
         const cluster = rvClusterName(row);
         if (vm) return inVms.has(vm);
         if (host) return inHosts.has(host);
@@ -784,7 +892,18 @@
         vCD: (rv.vCD || []).filter(keepHostOrVm),
         vSnapshot: (rv.vSnapshot || []).filter(keepHostOrVm),
         vCluster: (rv.vCluster || []).filter(row => inClusters.has(getCol(row, ['name', 'cluster', 'clustername'])) || keepHostOrVm(row)),
-        vMemory: (rv.vMemory || []).filter(keepHostOrVm)
+        vMemory: (rv.vMemory || []).filter(keepHostOrVm),
+        vDisk: (rv.vDisk || []).filter(keepHostOrVm),
+        vFloppy: (rv.vFloppy || []).filter(keepHostOrVm),
+        vHealth: (rv.vHealth || []).filter(keepHostOrVm),
+        vMultiPath: (rv.vMultiPath || []).filter(keepHostOrVm),
+        vNIC: (rv.vNIC || []).filter(keepHostOrVm),
+        vPort: (rv.vPort || []).filter(keepHostOrVm),
+        vSC_VMK: (rv.vSC_VMK || []).filter(keepHostOrVm),
+        vSCSI: (rv.vSCSI || []).filter(keepHostOrVm),
+        vGPU: (rv.vGPU || []).filter(keepHostOrVm),
+        vSource: (rv.vSource || []).filter(keepHostOrVm),
+        dvPort: (rv.dvPort || []).filter(keepHostOrVm)
       };
     };
 
@@ -7932,10 +8051,8 @@ const VCFApp = () => {
       const archFocusClass = (id) =>
         archFocusTarget === id ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-100 transition-shadow' : 'transition-shadow';
 
-      const [readinessResults, setReadinessResults] = useState({
-        cpus: [], hostConfig: [], guestOs: [], ioDevices: [], vNics: [], vmTools: [], vmHw: [],
-        datastores: [], dvSwitches: [], cdDrives: [], snapshots: [], clusters: []
-      });
+      const [readinessResults, setReadinessResults] = useState(emptyReadinessResults);
+      const [customerChecks, setCustomerChecks] = useState(emptyCustomerChecks);
       const [optimizationData, setOptimizationData] = useState({ vms: [], hostStats: {} });
 
       // Architecture State
@@ -9294,16 +9411,32 @@ const VCFApp = () => {
           });
       }, [rawRvData, hldStorageProto, gfStorageType, derivedAuto, derivedAvi, derivedHcx, hldEdgeStrategy, archSelectedCluster, fleetMgmtCluster, siteProfiles, hldIncAI, hldIncDR, hldIncSEC, hldIncDsm, manualVksScope]);
         
-      const emptyRvSheets = () => ({ vInfo: [], vHost: [], vHBA: [], vTools: [], vNetwork: [], vDatastore: [], dvSwitch: [], vSwitch: [], vCD: [], vSnapshot: [], vCluster: [], vMemory: [] });
+      const recordExportMeta = (workbook, fileName, combinedRvData) => {
+        const meta = combinedRvData._exportMeta || (combinedRvData._exportMeta = { date: '', version: '', files: [] });
+        if (fileName && !meta.files.includes(fileName)) meta.files.push(fileName);
+        const props = workbook.Props || workbook.Custprops || {};
+        const created = props.CreatedDate || props.ModifiedDate || props.created || '';
+        const app = props.Application || props.AppName || props.application || '';
+        if (created && !meta.date) meta.date = created instanceof Date ? created.toISOString() : String(created);
+        if (app && !meta.version) meta.version = String(app);
+      };
 
       const ingestWorkbookInto = (workbook, fileName, combinedRvData) => {
+        recordExportMeta(workbook, fileName, combinedRvData);
+        const knownTabs = Object.keys(combinedRvData).filter((key) => Array.isArray(combinedRvData[key]) && !key.startsWith('_'));
+        const markSheet = (tab, rows, originalName) => {
+          combinedRvData._present[tab] = true;
+          combinedRvData._sheetCounts[tab] = (combinedRvData._sheetCounts[tab] || 0) + rows.length;
+          combinedRvData[tab] = combinedRvData[tab].concat(rows);
+          combinedRvData._allSheets.push({ name: originalName || tab, tab, rows: rows.length });
+        };
         const isCsv = String(fileName).toLowerCase().endsWith('.csv');
         if (isCsv) {
           const sheetName = workbook.SheetNames[0];
           const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
-          Object.keys(combinedRvData).forEach(key => {
+          knownTabs.forEach(key => {
             const pattern = new RegExp('(?:^|[-_\\s])' + key + '\\s*(?:\\(\\d+\\))?\\.csv$', 'i');
-            if (pattern.test(fileName)) combinedRvData[key] = combinedRvData[key].concat(json);
+            if (pattern.test(fileName)) markSheet(key, json, fileName);
           });
           return;
         }
@@ -9311,13 +9444,20 @@ const VCFApp = () => {
           original: s,
           clean: s.toLowerCase().replace(/[^a-z0-9]/g, '')
         }));
-        Object.keys(combinedRvData).forEach(tab => {
+        const matched = new Set();
+        knownTabs.forEach(tab => {
           const cleanTab = tab.toLowerCase().replace(/[^a-z0-9]/g, '');
           const match = safeSheetNames.find(s => s.clean === cleanTab);
           if (match) {
             const json = XLSX.utils.sheet_to_json(workbook.Sheets[match.original], { defval: "" });
-            combinedRvData[tab] = combinedRvData[tab].concat(json);
+            markSheet(tab, json, match.original);
+            matched.add(match.original);
           }
+        });
+        safeSheetNames.forEach(s => {
+          if (matched.has(s.original)) return;
+          const json = XLSX.utils.sheet_to_json(workbook.Sheets[s.original], { defval: "" });
+          combinedRvData._allSheets.push({ name: s.original, tab: '', rows: json.length });
         });
       };
 
@@ -9374,7 +9514,7 @@ const VCFApp = () => {
             setStatus(`Processing ${i + 1} of ${files.length}: ${files[i].name}`);
             await processFileInto(files[i], combinedRvData);
           }
-          const importedRowCount = Object.values(combinedRvData).reduce((sum, rows) => sum + rows.length, 0);
+          const importedRowCount = Object.values(combinedRvData).reduce((sum, rows) => sum + (Array.isArray(rows) ? rows.length : 0), 0);
           if (importedRowCount === 0) {
             throw new Error('No recognized RVTools sheets or CSV filenames were found. Expected tabs/files such as vInfo and vHost. ZIP archives of those files are also accepted.');
           }
@@ -9383,6 +9523,7 @@ const VCFApp = () => {
           setExcludedVMs({});
           setScopeOpen({});
           setReadinessTab('estate');
+          setCustomerChecks(emptyCustomerChecks());
           const missingCoreTabs = ['vInfo', 'vHost'].filter(tab => combinedRvData[tab].length === 0);
           const hostCount = combinedRvData.vHost.length;
           const vmCount = combinedRvData.vInfo.length;
@@ -9419,7 +9560,8 @@ const VCFApp = () => {
 
       const handleStatusOverride = (tabKey, id, newStatus) => {
         setReadinessResults(prev => {
-          const updatedArray = prev[tabKey].map(item => item.id === id ? { ...item, status: newStatus } : item);
+          const list = prev[tabKey] || [];
+          const updatedArray = list.map(item => item.id === id ? { ...item, status: newStatus } : item);
           return { ...prev, [tabKey]: updatedArray };
         });
       };
@@ -9428,6 +9570,13 @@ const VCFApp = () => {
         if (!vcgData) return;
         const genId = () => Math.random().toString(36).substring(2, 10);
         let cpuRes = [], hostConfigRes = [], osRes = [], ioRes = [], vNicRes = [], toolsRes = [], hwRes = [], dsRes = [], dvsRes = [], cdRes = [], snapRes = [], clusterRes = [], softwareRes = [];
+        let inventoryRes = [], specialRes = [], qualityRes = [], hostNicRes = [], vmkRes = [];
+        const hostIndex = {};
+        const macMap = {};
+        const biosMap = {};
+        const instanceMap = {};
+        const vmNameMap = {};
+        const hostNames = new Set();
 
         rvData.vHost.forEach(host => {
           const hostName = getCol(host, ['host', 'name', 'hostname']);
@@ -9456,24 +9605,87 @@ const VCFApp = () => {
 
           cpuRes.push({ id: genId(), name: hostName, cluster: clusterName, host: hostName, details: cpuDetails, status: cpuStatus, vcgLevel: vcgCpu ? vcgCpu.series : 'Not in CPUs sheet' });
 
+          hostNames.add(hostName);
+          if (!hostIndex[clusterName || '(standalone)']) hostIndex[clusterName || '(standalone)'] = [];
+          hostIndex[clusterName || '(standalone)'].push(host);
+
           const ntpServers = getCol(host, ['ntpservers', 'ntpserver']);
           const ntpdRunning = String(getCol(host, ['ntpd', 'ntpdrunning'])).toLowerCase();
           const dnsServers = getCol(host, ['dnsservers', 'dns']);
-          const ntpOk = (ntpServers && ntpdRunning === 'true');
+          const ntpOk = (ntpServers && (rvTruthy(ntpdRunning) || ntpdRunning === 'true'));
           const dnsOk = !!dnsServers;
-          hostConfigRes.push({ id: genId(), name: hostName, cluster: clusterName, host: hostName, details: `NTP: ${ntpOk?'OK':'Fail'} | DNS: ${dnsOk?'OK':'Fail'}`, status: (ntpOk && dnsOk) ? 'green' : 'red' });
+          const esxVersion = getCol(host, ['esxversion', 'version', 'productversion', 'esxiver', 'hypervisor']);
+          const esxBuild = getCol(host, ['build', 'esxbuild', 'buildnumber']);
+          const maintRaw = getCol(host, ['maintenancemode', 'maintenance', 'inmaintenancemode']);
+          const connRaw = getCol(host, ['connectionstate', 'connection', 'hostconnectionstate']);
+          const inMaint = rvTruthy(maintRaw) || /yes|true|on/i.test(String(maintRaw));
+          const conn = String(connRaw || '').toLowerCase();
+          const disconnected = /notresponding|not responding|disconnected|inaccessible/i.test(conn);
+          let hostStatus = (ntpOk && dnsOk) ? 'green' : 'red';
+          if (disconnected) hostStatus = 'red';
+          else if (inMaint && hostStatus !== 'red') hostStatus = 'yellow';
+          const hostBits = [
+            `ESXi ${esxVersion || 'unknown'}${esxBuild ? ` build ${esxBuild}` : ''}`,
+            `Connection: ${connRaw || 'unknown'}`,
+            `Maintenance: ${inMaint ? 'Yes' : 'No'}`,
+            `NTP: ${ntpOk ? 'configured' : 'missing'}`,
+            `DNS: ${dnsOk ? 'configured' : 'missing'}`
+          ];
+          hostConfigRes.push({ id: genId(), name: hostName, cluster: clusterName, host: hostName, details: hostBits.join(' | '), status: hostStatus });
+          if (disconnected) {
+            inventoryRes.push({ id: genId(), name: hostName, cluster: clusterName, host: hostName, details: 'Host disconnected or not responding', status: 'red' });
+          }
         });
 
         rvData.vInfo.forEach(vm => {
           const vmName = getCol(vm, ['vm', 'name', 'vmname']);
           const clusterName = getCol(vm, ['cluster']);
           const hostName = getCol(vm, ['host', 'hostname']);
-          if (!vmName) return; 
+          if (!vmName) {
+            inventoryRes.push({ id: genId(), name: '(unnamed VM)', cluster: clusterName, host: hostName, details: 'Missing or invalid inventory values — VM name is blank', status: 'yellow' });
+            return;
+          }
 
           const vmNameStr = String(vmName).toLowerCase();
+          vmNameMap[vmNameStr] = (vmNameMap[vmNameStr] || []).concat([{ vmName, clusterName, hostName }]);
+          const biosUuid = String(getCol(vm, ['uuid', 'biosuuid', 'bios uuid', 'smbiosuuid']) || '').trim();
+          const instanceUuid = String(getCol(vm, ['instanceuuid', 'instance uuid', 'vmuuid']) || '').trim();
+          if (biosUuid && biosUuid !== '0') (biosMap[biosUuid.toLowerCase()] = biosMap[biosUuid.toLowerCase()] || []).push({ vmName, clusterName, hostName });
+          if (instanceUuid && instanceUuid !== '0' && instanceUuid.toLowerCase() !== biosUuid.toLowerCase()) (instanceMap[instanceUuid.toLowerCase()] = instanceMap[instanceUuid.toLowerCase()] || []).push({ vmName, clusterName, hostName });
+          if (!biosUuid && !instanceUuid) inventoryRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Missing or invalid inventory values — BIOS/instance UUID blank', status: 'yellow' });
+
+          const connState = String(getCol(vm, ['connectionstate', 'connection', 'gueststate', 'configstatus']) || '').toLowerCase();
+          const configIssue = String(getCol(vm, ['configissue', 'configissues', 'issue']) || '');
+          if (/orphan|inaccessible|invalid/i.test(connState) || /orphan|inaccessible/i.test(configIssue)) {
+            inventoryRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Orphaned or inaccessible VM (${connState || configIssue || 'config issue'})`, status: 'red' });
+          }
+          if (hostName && hostNames.size && !hostNames.has(hostName)) {
+            inventoryRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'VM registered on unexpected host — host is not in the vHost inventory', status: 'yellow' });
+          }
+          if (!hostName) inventoryRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Missing or invalid inventory values — host is blank', status: 'yellow' });
+
+          const ft = String(getCol(vm, ['ft', 'faulttolerance', 'ftstate', 'faulttolerancestate']) || '');
+          const encrypted = String(getCol(vm, ['encrypted', 'vmencrypted', 'encryption']) || '');
+          const vtpm = String(getCol(vm, ['vtpm', 'tpm', 'trustedplatformmodule']) || '');
+          const passthrough = String(getCol(vm, ['passthrough', 'pcipassthrough', 'directpath', 'directpathio']) || '');
+          const sriov = String(getCol(vm, ['sriov', 'vgpu', 'nvidia']) || '');
+          const affinity = String(getCol(vm, ['affinity', 'hostaffinity', 'mustrule', 'vmhostaffinity']) || '');
+          const cpuResMhz = parseFloat(getCol(vm, ['cpureservation', 'cpureservationmhz', 'reservationmhz'])) || 0;
+          const memRes = parseFloat(getCol(vm, ['memoryreservation', 'memoryreservationmb', 'memreservation'])) || 0;
+          const memCfg = parseFloat(getCol(vm, ['memory', 'memorymb', 'memorymib'])) || 0;
+          if (rvTruthy(ft) || /enabled|primary|secondary/i.test(ft)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Fault Tolerance is enabled (${ft})`, status: 'red' });
+          if (rvTruthy(encrypted) || /encrypted|on/i.test(encrypted)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Encrypted VM', status: 'yellow' });
+          if (rvTruthy(vtpm) || /present|true|yes/i.test(vtpm)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'vTPM present', status: 'yellow' });
+          if (rvTruthy(passthrough) || /directpath|passthrough/i.test(passthrough)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'PCI passthrough or DirectPath I/O', status: 'red' });
+          if (rvTruthy(sriov) || /sriov|vgpu|grid/i.test(sriov)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `SR-IOV or vGPU device (${sriov})`, status: 'red' });
+          if (/must|affinity|pin/i.test(affinity)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Host affinity or pinned placement (${affinity})`, status: 'yellow' });
+          if (cpuResMhz >= 4000) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Large CPU reservation (${cpuResMhz} MHz)`, status: 'yellow' });
+          if ((memRes >= 16384) || (memCfg > 0 && memRes > 0 && memRes >= memCfg * 0.95)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Large memory reservation (${memRes} MB)`, status: 'yellow' });
+
           if (vmNameStr.includes('ntnx') || vmNameStr.includes('cvm')) {
               cpuRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `[NUTANIX CVM DETECTED] Nutanix HCI relies on Controller VMs. VCF 9.1 is fundamentally incompatible with Nutanix/NDFS. Hardware migration required.`, status: 'red' });
-              return; // Skip normal OS checks so this doesn't show up as a Workload
+              specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Nutanix controller VM — individual migration planning required', status: 'red' });
+              return;
           }
 
           // Management Software Detection (Aria, NSX, vCenter)
@@ -9496,19 +9708,19 @@ const VCFApp = () => {
               return rv.some(c => c.length > 2 && (cleanOs === c || (cleanOs.includes(c) && c.match(/\d/)) || (c.includes(cleanOs) && cleanOs.match(/\d/))));
             });
             
-            let osStatus = 'yellow', supportLevel = 'Manual Check';
+            let osStatus = 'yellow', supportLevel = 'Verify version';
             
             if (vcgMatch) {
               const rowVals = Object.values(vcgMatch).map(v => String(v).toLowerCase());
-              if (rowVals.some(v => ['supported','yes'].includes(v) || v.includes('tier'))) { osStatus = 'green'; supportLevel = 'Supported'; }
+              if (rowVals.some(v => ['supported','yes'].includes(v) || v.includes('tier'))) { osStatus = 'green'; supportLevel = 'Listed in VCG'; }
               else if (rowVals.some(v => v.includes('legacy') || v.includes('deprecated'))) { osStatus = 'yellow'; supportLevel = 'Legacy'; }
               else { osStatus = 'green'; supportLevel = 'Listed in VCG'; }
             } else {
               const modernOsKeywords = ['2016', '2019', '2022', 'windows 10', 'windows 11', 'ubuntu', 'rhel 8', 'rhel 9', 'centos 8', 'centos 9', 'sles 15', 'photon', 'debian 11', 'debian 12', 'alma', 'rocky', 'oracle linux 8', 'oracle linux 9'];
               if (modernOsKeywords.some(k => rawOsStr.includes(k))) {
-                 osStatus = 'green'; supportLevel = 'Supported (Heuristic)';
+                 osStatus = 'green'; supportLevel = 'Heuristic match';
               } else if (rawOsStr.includes('windows') || rawOsStr.includes('linux') || rawOsStr.includes('centos') || rawOsStr.includes('ubuntu') || rawOsStr.includes('rhel')) {
-                 osStatus = 'yellow'; supportLevel = 'Verify Version';
+                 osStatus = 'yellow'; supportLevel = 'Verify version';
               } else {
                  osStatus = 'yellow'; supportLevel = 'Unknown OS'; 
               }
@@ -9628,6 +9840,14 @@ if (rvData.vHBA) {
                 else if (freePct < 20) { if (status !== 'red') status = 'yellow'; dsDetails += ` | Free: ${freePct}% [WARNING]`; }
                 else dsDetails += ` | Free: ${freePct}%`;
             }
+            const accessible = getCol(ds, ['accessible', 'access', 'hostsaccessible', 'connectedhosts']);
+            const hostCountDs = getCol(ds, ['numberofhosts', 'hostcount', 'numhosts']);
+            if (accessible) dsDetails += ` | Access: ${accessible}`;
+            if (hostCountDs) dsDetails += ` | Hosts: ${hostCountDs}`;
+            if (/false|no|0/i.test(String(accessible)) && String(accessible).trim() !== '') {
+              status = 'red';
+              dsDetails += ' [not accessible]';
+            }
             dsRes.push({ id: genId(), name: dsName, cluster: clusterName, host: hostName, details: dsDetails, status: status });
           });
         }
@@ -9677,10 +9897,41 @@ if (rvData.vHBA) {
             if (!clName) return;
             const drsEnabled = String(getCol(cl, ['drsenabled', 'drs'])).toLowerCase();
             const drsMode = String(getCol(cl, ['drsdefaultvmbehavior', 'drsmode', 'behavior'])).toLowerCase();
-            let status = (drsEnabled === 'true' && drsMode === 'fullyautomated') ? 'green' : 'red';
-            clusterRes.push({ id: genId(), name: clName, cluster: clName, host: 'N/A', details: `DRS Enabled: ${drsEnabled === 'true' ? 'Yes' : 'No'} | Mode: ${drsMode || 'None'}`, status: status });
+            const haEnabled = String(getCol(cl, ['haenabled', 'ha', 'hasenabled']) || '');
+            const evcMode = getCol(cl, ['evcmode', 'evc', 'evccpumode', 'evcmodecpu']) || '';
+            const declaredHosts = getCol(cl, ['numhosts', 'numberofhosts', 'hosts', 'hostcount']);
+            const hostsInCluster = hostIndex[clName] || [];
+            const hostCount = hostsInCluster.length || parseInt(declaredHosts, 10) || 0;
+            const builds = [...new Set(hostsInCluster.map(h => {
+              const ver = getCol(h, ['esxversion', 'version', 'productversion']);
+              const build = getCol(h, ['build', 'esxbuild', 'buildnumber']);
+              return [ver, build].filter(Boolean).join(' build ');
+            }).filter(Boolean))];
+            const cpus = [...new Set(hostsInCluster.map(h => getCol(h, ['cpumodel', 'cpu'])).filter(Boolean))];
+            const oems = [...new Set(hostsInCluster.map(h => [getCol(h, ['vendor', 'manufacturer']), getCol(h, ['model'])].filter(Boolean).join(' ')).filter(Boolean))];
+            const drsOk = (drsEnabled === 'true' || rvTruthy(drsEnabled)) && drsMode.replace(/\s/g, '') === 'fullyautomated';
+            const haOk = haEnabled === '' ? null : (rvTruthy(haEnabled) || /true|yes|enabled/i.test(haEnabled));
+            const mixedBuilds = builds.length > 1;
+            const mixedHw = cpus.length > 1 || oems.length > 1;
+            let status = drsOk ? 'green' : 'red';
+            if (haOk === false && status !== 'red') status = 'red';
+            if ((mixedBuilds || mixedHw || !evcMode || /disabled|false|none/i.test(evcMode) || hostCount < 3) && status === 'green') status = 'yellow';
+            const bits = [
+              `DRS: ${(drsEnabled === 'true' || rvTruthy(drsEnabled)) ? 'Yes' : 'No'} / ${drsMode || 'none'}`,
+              `HA: ${haEnabled || 'not reported'}`,
+              `EVC: ${evcMode || 'not reported'}`,
+              `Hosts: ${hostCount}`,
+              mixedBuilds ? `Mixed builds: ${builds.join(' · ')}` : (builds[0] ? `Build: ${builds[0]}` : 'Build: n/a'),
+              mixedHw ? `Hardware mixed: ${[...cpus, ...oems].slice(0, 3).join(' · ')}` : (oems[0] || cpus[0] || 'Hardware consistent')
+            ];
+            clusterRes.push({ id: genId(), name: clName, cluster: clName, host: 'N/A', details: bits.join(' | '), status });
           });
         }
+        Object.keys(hostIndex).forEach(clName => {
+          if (clusterRes.some(r => r.name === clName)) return;
+          const hostsInCluster = hostIndex[clName] || [];
+          clusterRes.push({ id: genId(), name: clName, cluster: clName, host: 'N/A', details: `Cluster row missing from vCluster · Hosts: ${hostsInCluster.length} (DRS/HA/EVC not assessed)`, status: rvSheetPresent(rvData, 'vCluster') ? 'yellow' : 'gray' });
+        });
 
         if (rvData.vCD) {
           rvData.vCD.forEach(cd => {
@@ -9691,8 +9942,24 @@ if (rvData.vHBA) {
             const connected = String(getCol(cd, ['connected'])).toLowerCase();
             if (connected === 'true' || connected === 'yes') {
                 const deviceLabel = getCol(cd, ['label', 'device', 'cdlabel', 'devicenode', 'devicetype', 'type']) || 'CD/DVD Drive';
+                const backing = String(getCol(cd, ['filename', 'isopath', 'iso', 'devicebacking', 'backing']) || '');
                 const isFloppy = /floppy/i.test(String(deviceLabel));
-                cdRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `${deviceLabel} is CONNECTED${isFloppy ? ' — floppy is a vMotion / rolling-upgrade blocker' : ''}`, status: 'red' });
+                const isLocal = /client device|host device|remote device|\[\/\]/i.test(String(deviceLabel) + ' ' + backing);
+                cdRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `${deviceLabel} is CONNECTED${isFloppy ? ' — floppy is a vMotion / rolling-upgrade blocker' : ''}${backing ? ` · ${backing}` : ''}`, status: 'red' });
+                if (isLocal || isFloppy) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Connected host-local media (${deviceLabel})`, status: 'red' });
+            }
+          });
+        }
+        if (rvData.vFloppy) {
+          rvData.vFloppy.forEach(fl => {
+            const vmName = getCol(fl, ['vmname', 'vm', 'name']);
+            const clusterName = getCol(fl, ['cluster']);
+            const hostName = getCol(fl, ['host', 'hostname']);
+            if (!vmName) return;
+            const connected = String(getCol(fl, ['connected'])).toLowerCase();
+            if (connected === 'true' || connected === 'yes') {
+              cdRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Floppy drive is CONNECTED — vMotion / rolling-upgrade blocker', status: 'red' });
+              specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Connected host-local media (floppy)', status: 'red' });
             }
           });
         }
@@ -9716,10 +9983,181 @@ if (rvData.vHBA) {
           });
         }
 
-        setReadinessResults({ 
-            cpus: cpuRes, hostConfig: hostConfigRes, guestOs: osRes, ioDevices: ioRes, 
-            vNics: vNicRes, vmTools: toolsRes, vmHw: hwRes, 
-            datastores: dsRes, dvSwitches: dvsRes, clusters: clusterRes, cdDrives: cdRes, snapshots: snapRes, software: softwareRes
+        if (rvData.vNetwork) {
+          rvData.vNetwork.forEach(nic => {
+            const mac = String(getCol(nic, ['mac', 'macaddress', 'address']) || '').trim().toLowerCase();
+            if (!mac || /^00:00:00:00:00:00$/.test(mac) || mac === 'n/a') return;
+            const vmName = getCol(nic, ['vm', 'name', 'vmname']) || 'Unknown VM';
+            const clusterName = getCol(nic, ['cluster']);
+            const hostName = getCol(nic, ['host', 'hostname']);
+            (macMap[mac] = macMap[mac] || []).push({ vmName, clusterName, hostName });
+          });
+        }
+        Object.entries(macMap).forEach(([mac, rows]) => {
+          if (rows.length < 2) return;
+          rows.forEach(r => inventoryRes.push({ id: genId(), name: r.vmName, cluster: r.clusterName, host: r.hostName, details: `Duplicate MAC address ${mac} (${rows.length} registrations)`, status: 'red' }));
+        });
+        Object.entries(biosMap).forEach(([uuid, rows]) => {
+          if (rows.length < 2) return;
+          rows.forEach(r => inventoryRes.push({ id: genId(), name: r.vmName, cluster: r.clusterName, host: r.hostName, details: `Duplicate BIOS UUID ${uuid}`, status: 'red' }));
+        });
+        Object.entries(instanceMap).forEach(([uuid, rows]) => {
+          if (rows.length < 2) return;
+          rows.forEach(r => inventoryRes.push({ id: genId(), name: r.vmName, cluster: r.clusterName, host: r.hostName, details: `Duplicate instance UUID ${uuid}`, status: 'red' }));
+        });
+        Object.entries(vmNameMap).forEach(([, rows]) => {
+          const hosts = new Set(rows.map(r => r.hostName).filter(Boolean));
+          if (rows.length < 2) return;
+          if (hosts.size > 1) rows.forEach(r => inventoryRes.push({ id: genId(), name: r.vmName, cluster: r.clusterName, host: r.hostName, details: `Duplicate VM registration on ${rows.length} records / ${hosts.size} hosts`, status: 'red' }));
+        });
+
+        if (rvData.vDisk) {
+          rvData.vDisk.forEach(disk => {
+            const vmName = getCol(disk, ['vm', 'vmname', 'name']);
+            const clusterName = getCol(disk, ['cluster']);
+            const hostName = getCol(disk, ['host', 'hostname']);
+            if (!vmName) return;
+            const raw = String(getCol(disk, ['raw', 'rdm', 'disktype', 'type', 'rawlun']) || '');
+            const sharing = String(getCol(disk, ['sharing', 'shared', 'multimode', 'diskmode', 'mode']) || '');
+            const controller = String(getCol(disk, ['controller', 'scsi', 'bussharing']) || '');
+            if (/rdm|raw/i.test(raw) && !/^vmfs|vmdk$/i.test(raw)) {
+              specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Physical or virtual RDM (${raw})`, status: 'red' });
+            }
+            if (/multi-?writer|sharing|shared/i.test(sharing) && !/none|no|false/i.test(sharing)) {
+              specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Shared disk or multi-writer VMDK (${sharing})`, status: 'red' });
+            }
+            if (/physical|virtual/i.test(controller) && /sharing/i.test(controller)) {
+              specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `SCSI bus sharing (${controller})`, status: 'red' });
+            }
+          });
+        }
+        if (rvData.vSCSI) {
+          rvData.vSCSI.forEach(scsi => {
+            const vmName = getCol(scsi, ['vm', 'vmname', 'name']);
+            const sharing = String(getCol(scsi, ['sharing', 'bussharing', 'sharedbus']) || '');
+            if (!vmName || !sharing || /none|no|false/i.test(sharing)) return;
+            specialRes.push({ id: genId(), name: vmName, cluster: getCol(scsi, ['cluster']), host: getCol(scsi, ['host', 'hostname']), details: `SCSI bus sharing (${sharing})`, status: 'red' });
+          });
+        }
+        if (rvData.vGPU) {
+          rvData.vGPU.forEach(gpu => {
+            const vmName = getCol(gpu, ['vm', 'vmname', 'name']);
+            if (!vmName) return;
+            specialRes.push({ id: genId(), name: vmName, cluster: getCol(gpu, ['cluster']), host: getCol(gpu, ['host', 'hostname']), details: `vGPU or SR-IOV device (${getCol(gpu, ['profile', 'device', 'type']) || 'present'})`, status: 'red' });
+          });
+        }
+
+        if (rvData.vMultiPath && rvData.vMultiPath.length) {
+          const byDs = {};
+          rvData.vMultiPath.forEach(p => {
+            const ds = getCol(p, ['datastore', 'name']) || getCol(p, ['lun', 'canonical', 'device']) || 'path';
+            const hostName = getCol(p, ['host', 'hostname']);
+            const paths = parseInt(getCol(p, ['pathcount', 'paths', 'activepaths', 'numpaths']), 10);
+            const state = String(getCol(p, ['state', 'pathstate', 'status']) || '');
+            (byDs[ds] = byDs[ds] || []).push({ hostName, paths, state });
+            if (!isNaN(paths) && paths < 2) {
+              dsRes.push({ id: genId(), name: ds, cluster: getCol(p, ['cluster']) || 'Shared', host: hostName, details: `Single storage path (${paths}) — redundancy not observed`, status: 'yellow' });
+            }
+          });
+        }
+
+        if (rvData.vNIC) {
+          rvData.vNIC.forEach(nic => {
+            const hostName = getCol(nic, ['host', 'name', 'hostname']);
+            const device = getCol(nic, ['device', 'name', 'vmnic', 'nic']) || 'vmnic';
+            const driver = getCol(nic, ['driver', 'adapter', 'type']) || '';
+            const speed = getCol(nic, ['speed', 'linkspeed', 'mbps']) || '';
+            const sw = getCol(nic, ['switch', 'vswitch', 'dvswitch']) || '';
+            const clusterName = getCol(nic, ['cluster']);
+            let status = 'green';
+            if (!sw) status = 'yellow';
+            hostNicRes.push({ id: genId(), name: hostName || device, cluster: clusterName, host: hostName, details: `${device}${driver ? ` · ${driver}` : ''}${speed ? ` · ${speed}` : ''}${sw ? ` · uplink to ${sw}` : ' · no switch reported'}`, status });
+          });
+        }
+        const vmkRows = [].concat(rvData.vSC_VMK || [], rvData.vPort || []);
+        const seenVmk = new Set();
+        vmkRows.forEach(row => {
+          const hostName = getCol(row, ['host', 'hostname']);
+          const pg = getCol(row, ['portgroup', 'name', 'device', 'vmkernel']) || 'VMkernel';
+          const ip = getCol(row, ['ip', 'ipaddress']);
+          const sw = getCol(row, ['switch', 'vswitch', 'dvswitch']);
+          const mtu = getCol(row, ['mtu']);
+          const key = `${hostName}|${pg}|${ip}`;
+          if (seenVmk.has(key)) return;
+          seenVmk.add(key);
+          let status = 'green';
+          if (sw && /^vswitch/i.test(String(sw))) status = 'red';
+          vmkRes.push({ id: genId(), name: pg, cluster: getCol(row, ['cluster']), host: hostName, details: `${ip || 'no IP'}${sw ? ` · ${sw}` : ''}${mtu ? ` · MTU ${mtu}` : ''}`, status });
+        });
+
+        if (rvData.vHealth) {
+          rvData.vHealth.forEach(h => {
+            const msg = getCol(h, ['message', 'health', 'name', 'description']) || 'Health finding';
+            const name = getCol(h, ['vm', 'host', 'name', 'object']) || 'Inventory';
+            inventoryRes.push({ id: genId(), name, cluster: getCol(h, ['cluster']), host: getCol(h, ['host', 'hostname']), details: String(msg), status: /error|fail|duplicate|orphan/i.test(String(msg)) ? 'red' : 'yellow' });
+          });
+        }
+
+        const present = rvData._present || {};
+        const counts = rvData._sheetCounts || {};
+        const meta = rvData._exportMeta || {};
+        const assessment = [
+          { check: 'Cluster configuration', sheets: ['vCluster'] },
+          { check: 'Host setup', sheets: ['vHost'] },
+          { check: 'Server hardware (CPUs)', sheets: ['vHost'] },
+          { check: 'Storage adapters', sheets: ['vHBA'] },
+          { check: 'Operating systems', sheets: ['vInfo'] },
+          { check: 'VM tools', sheets: ['vTools'] },
+          { check: 'VM network adapters', sheets: ['vNetwork'] },
+          { check: 'Snapshots', sheets: ['vSnapshot'] },
+          { check: 'Attached media', sheets: ['vCD'] },
+          { check: 'Floppy devices', sheets: ['vFloppy'] },
+          { check: 'Datastores', sheets: ['vDatastore'] },
+          { check: 'Multipathing', sheets: ['vMultiPath'] },
+          { check: 'Host networking', sheets: ['dvSwitch', 'vSwitch'] },
+          { check: 'Host uplinks', sheets: ['vNIC'] },
+          { check: 'VMkernel placement', sheets: ['vSC_VMK', 'vPort'] },
+          { check: 'Inventory health', sheets: ['vHealth'] },
+          { check: 'Special VM disks (RDM / sharing)', sheets: ['vDisk'] }
+        ];
+        assessment.forEach(item => {
+          const found = item.sheets.filter(s => present[s]);
+          const missing = item.sheets.filter(s => !present[s]);
+          let result = 'Assessed';
+          let status = 'green';
+          if (!found.length) {
+            result = `Not assessed—\`${missing.join('`, `')}\` missing`;
+            status = 'gray';
+          } else if (missing.length) {
+            result = `Partially assessed—\`${missing.join('`, `')}\` missing`;
+            status = 'yellow';
+          }
+          qualityRes.push({ id: genId(), name: item.check, cluster: '', host: '', details: result, status, vcgLevel: found.map(s => `${s} (${counts[s] || 0})`).join(', ') || '—' });
+        });
+        const receivedList = Object.keys(present).filter(k => present[k]);
+        const missingCore = RV_EXPECTED_SHEETS.filter(s => !present[s]);
+        qualityRes.unshift({
+          id: genId(),
+          name: 'RVTools export',
+          cluster: '',
+          host: '',
+          details: `Date: ${meta.date || 'not in file properties'} · Version: ${meta.version || 'not reported'} · Files: ${(meta.files || []).join(', ') || 'upload'} · Sheets received: ${receivedList.length} · Expected sheets missing: ${missingCore.length ? missingCore.join(', ') : 'none'}`,
+          status: missingCore.length ? 'yellow' : 'green'
+        });
+
+        if (!rvSheetPresent(rvData, 'vHBA')) ioRes.push({ id: genId(), name: 'Storage adapters', cluster: '', host: '', details: 'Not assessed—`vHBA` missing', status: 'gray' });
+        if (!rvSheetPresent(rvData, 'vMultiPath')) dsRes.push({ id: genId(), name: 'Multipathing', cluster: '', host: '', details: 'Not assessed—`vMultiPath` missing — storage-path redundancy cannot be assessed', status: 'gray' });
+        if (!rvSheetPresent(rvData, 'vCluster')) clusterRes.push({ id: genId(), name: 'Cluster configuration', cluster: '', host: '', details: 'Not assessed—`vCluster` missing', status: 'gray' });
+        if (!rvSheetPresent(rvData, 'vNIC')) hostNicRes.push({ id: genId(), name: 'Host uplinks', cluster: '', host: '', details: 'Not assessed—`vNIC` missing', status: 'gray' });
+        if (!rvSheetPresent(rvData, 'vSC_VMK') && !rvSheetPresent(rvData, 'vPort')) vmkRes.push({ id: genId(), name: 'VMkernel placement', cluster: '', host: '', details: 'Not assessed—`vSC_VMK` / `vPort` missing', status: 'gray' });
+        if (!rvSheetPresent(rvData, 'vHealth')) inventoryRes.push({ id: genId(), name: 'Inventory health sheet', cluster: '', host: '', details: 'Not assessed—`vHealth` missing. Duplicate MAC/UUID checks below still ran from vInfo/vNetwork.', status: 'gray' });
+        if (!rvSheetPresent(rvData, 'vDisk')) specialRes.push({ id: genId(), name: 'RDM / shared disks', cluster: '', host: '', details: 'Not assessed—`vDisk` missing', status: 'gray' });
+
+        setReadinessResults({
+            cpus: cpuRes, hostConfig: hostConfigRes, guestOs: osRes, ioDevices: ioRes,
+            vNics: vNicRes, vmTools: toolsRes, vmHw: hwRes,
+            datastores: dsRes, dvSwitches: dvsRes, clusters: clusterRes, cdDrives: cdRes, snapshots: snapRes, software: softwareRes,
+            inventoryIssues: inventoryRes, specialVms: specialRes, dataQuality: qualityRes, hostNics: hostNicRes, vmkernel: vmkRes
         });
       };
 
@@ -10627,24 +11065,27 @@ const architectureMath = useMemo(() => {
           return;
         }
         const wb = XLSX.utils.book_new();
-        const getCounts = (arr) => arr.reduce((acc, curr) => { acc[curr.status] = (acc[curr.status] || 0) + 1; return acc; }, { green: 0, yellow: 0, red: 0 });
+        const getCounts = (arr) => (arr || []).reduce((acc, curr) => { acc[curr.status] = (acc[curr.status] || 0) + 1; return acc; }, { green: 0, yellow: 0, red: 0, gray: 0 });
         const getC = (arr) => getCounts(arr);
         
         const summaryData = [
-          ["VCF 9.1 Readiness Dashboard Summary"], [],
-          ["Category", "Supported", "Manual Check", "Unsupported", "Total Assets"],
-          ["Processors (CPUs)", getC(readinessResults.cpus).green, getC(readinessResults.cpus).yellow, getC(readinessResults.cpus).red, readinessResults.cpus.length],
-          ["Host NTP Config", getC(readinessResults.hostConfig).green, getC(readinessResults.hostConfig).yellow, getC(readinessResults.hostConfig).red, readinessResults.hostConfig.length],
-          ["Cluster Automation (DRS)", getC(readinessResults.clusters).green, getC(readinessResults.clusters).yellow, getC(readinessResults.clusters).red, readinessResults.clusters.length],
-          ["Guest OS", getC(readinessResults.guestOs).green, getC(readinessResults.guestOs).yellow, getC(readinessResults.guestOs).red, readinessResults.guestOs.length],
-          ["VM Hardware Version", getC(readinessResults.vmHw).green, getC(readinessResults.vmHw).yellow, getC(readinessResults.vmHw).red, readinessResults.vmHw.length],
-          ["VMware Tools", getC(readinessResults.vmTools).green, getC(readinessResults.vmTools).yellow, getC(readinessResults.vmTools).red, readinessResults.vmTools.length],
-          ["VM Virtual Network Adapters", getC(readinessResults.vNics).green, getC(readinessResults.vNics).yellow, getC(readinessResults.vNics).red, readinessResults.vNics.length],
-          ["VM Active Snapshots", getC(readinessResults.snapshots).green, getC(readinessResults.snapshots).yellow, getC(readinessResults.snapshots).red, readinessResults.snapshots.length],
-          ["VM Connected CD/DVDs", getC(readinessResults.cdDrives).green, getC(readinessResults.cdDrives).yellow, getC(readinessResults.cdDrives).red, readinessResults.cdDrives.length],
-          ["Datastores (VMFS)", getC(readinessResults.datastores).green, getC(readinessResults.datastores).yellow, getC(readinessResults.datastores).red, readinessResults.datastores.length],
-          ["Switches (vDS / vSS)", getC(readinessResults.dvSwitches).green, getC(readinessResults.dvSwitches).yellow, getC(readinessResults.dvSwitches).red, readinessResults.dvSwitches.length],
-          ["HBA(s)", getC(readinessResults.ioDevices).green, getC(readinessResults.ioDevices).yellow, getC(readinessResults.ioDevices).red, readinessResults.ioDevices.length],
+          ["VCF 9.1 Readiness — Needs Attention Summary"], [],
+          ["Category", "No issue observed", "Discuss", "Action needed", "Not validated", "Total"],
+          ["Server Hardware (CPUs)", getC(readinessResults.cpus).green, getC(readinessResults.cpus).yellow, getC(readinessResults.cpus).red, getC(readinessResults.cpus).gray, (readinessResults.cpus || []).length],
+          ["Storage Adapters (HBA)", getC(readinessResults.ioDevices).green, getC(readinessResults.ioDevices).yellow, getC(readinessResults.ioDevices).red, getC(readinessResults.ioDevices).gray, (readinessResults.ioDevices || []).length],
+          ["Host Setup", getC(readinessResults.hostConfig).green, getC(readinessResults.hostConfig).yellow, getC(readinessResults.hostConfig).red, getC(readinessResults.hostConfig).gray, (readinessResults.hostConfig || []).length],
+          ["Clusters", getC(readinessResults.clusters).green, getC(readinessResults.clusters).yellow, getC(readinessResults.clusters).red, getC(readinessResults.clusters).gray, (readinessResults.clusters || []).length],
+          ["Operating Systems", getC(readinessResults.guestOs).green, getC(readinessResults.guestOs).yellow, getC(readinessResults.guestOs).red, getC(readinessResults.guestOs).gray, (readinessResults.guestOs || []).length],
+          ["VM Compatibility", getC(readinessResults.vmHw).green, getC(readinessResults.vmHw).yellow, getC(readinessResults.vmHw).red, getC(readinessResults.vmHw).gray, (readinessResults.vmHw || []).length],
+          ["VM Tools", getC(readinessResults.vmTools).green, getC(readinessResults.vmTools).yellow, getC(readinessResults.vmTools).red, getC(readinessResults.vmTools).gray, (readinessResults.vmTools || []).length],
+          ["VM Network Adapters", getC(readinessResults.vNics).green, getC(readinessResults.vNics).yellow, getC(readinessResults.vNics).red, getC(readinessResults.vNics).gray, (readinessResults.vNics || []).length],
+          ["Snapshots", getC(readinessResults.snapshots).green, getC(readinessResults.snapshots).yellow, getC(readinessResults.snapshots).red, getC(readinessResults.snapshots).gray, (readinessResults.snapshots || []).length],
+          ["Attached Media", getC(readinessResults.cdDrives).green, getC(readinessResults.cdDrives).yellow, getC(readinessResults.cdDrives).red, getC(readinessResults.cdDrives).gray, (readinessResults.cdDrives || []).length],
+          ["Storage", getC(readinessResults.datastores).green, getC(readinessResults.datastores).yellow, getC(readinessResults.datastores).red, getC(readinessResults.datastores).gray, (readinessResults.datastores || []).length],
+          ["Host Networking", getC(readinessResults.dvSwitches).green, getC(readinessResults.dvSwitches).yellow, getC(readinessResults.dvSwitches).red, getC(readinessResults.dvSwitches).gray, (readinessResults.dvSwitches || []).length],
+          ["Inventory Issues", getC(readinessResults.inventoryIssues).green, getC(readinessResults.inventoryIssues).yellow, getC(readinessResults.inventoryIssues).red, getC(readinessResults.inventoryIssues).gray, (readinessResults.inventoryIssues || []).length],
+          ["Special VMs", getC(readinessResults.specialVms).green, getC(readinessResults.specialVms).yellow, getC(readinessResults.specialVms).red, getC(readinessResults.specialVms).gray, (readinessResults.specialVms || []).length],
+          ["Data Quality", getC(readinessResults.dataQuality).green, getC(readinessResults.dataQuality).yellow, getC(readinessResults.dataQuality).red, getC(readinessResults.dataQuality).gray, (readinessResults.dataQuality || []).length],
           [],
           ["VCF Core Licensing Metric", totalVcfCores],
           ["Core Value Source", vcfCoreMode],
@@ -10656,12 +11097,12 @@ const architectureMath = useMemo(() => {
         
         // Exact column widths to match the Excel screenshot
         wsSummary['!cols'] = [
-            { wch: 32 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
+            { wch: 32 }, { wch: 18 }, { wch: 15 }, { wch: 16 }, { wch: 16 }, { wch: 12 }
         ];
 
         // Apply styles to Summary Header
         if(wsSummary['A1']) wsSummary['A1'].s = { font: { bold: true, sz: 14 } };
-        ['A3', 'B3', 'C3', 'D3', 'E3'].forEach(cell => {
+        ['A3', 'B3', 'C3', 'D3', 'E3', 'F3'].forEach(cell => {
             if(wsSummary[cell]) wsSummary[cell].s = { 
                 fill: { fgColor: { rgb: "4472C4" } }, 
                 font: { bold: true, color: { rgb: "FFFFFF" } } 
@@ -10678,12 +11119,15 @@ const architectureMath = useMemo(() => {
             
             let cellD = XLSX.utils.encode_cell({c: 3, r: R});
             if(wsSummary[cellD]) wsSummary[cellD].s = { fill: { fgColor: { rgb: "FFC7CE" } }, font: { color: { rgb: "9C0006" }, bold: true }, alignment: { horizontal: "right" } };
-            
+
             let cellE = XLSX.utils.encode_cell({c: 4, r: R});
-            if(wsSummary[cellE]) wsSummary[cellE].s = { font: { bold: true }, alignment: { horizontal: "right" } };
+            if(wsSummary[cellE]) wsSummary[cellE].s = { fill: { fgColor: { rgb: "D9D9D9" } }, font: { color: { rgb: "595959" }, bold: true }, alignment: { horizontal: "right" } };
+            
+            let cellF = XLSX.utils.encode_cell({c: 5, r: R});
+            if(wsSummary[cellF]) wsSummary[cellF].s = { font: { bold: true }, alignment: { horizontal: "right" } };
         }
         
-        XLSX.utils.book_append_sheet(wb, wsSummary, "Dashboard Summary");
+        XLSX.utils.book_append_sheet(wb, wsSummary, "Needs Attention");
 
         const coreRows = vcfCoreDerivation.rows.map(row => ({
           'Host': row.hostName,
@@ -10702,7 +11146,7 @@ const architectureMath = useMemo(() => {
         }
         
         const addSheet = (data, name, isGuestOs = false) => {
-           if(data.length === 0) return;
+           if(!data || data.length === 0) return;
            const ws = XLSX.utils.json_to_sheet(data.map(item => {
                const row = {
                    "Asset Name": item.name,
@@ -10712,7 +11156,7 @@ const architectureMath = useMemo(() => {
                    row["VCG Tier"] = item.vcgLevel || 'N/A';
                }
                // Add emojis and matching text for the detail sheets
-               row["Readiness Status"] = item.status === 'green' ? '✅ Supported' : item.status === 'yellow' ? '⚠️ Manual Check' : '❌ Unsupported';
+               row["Readiness Status"] = READINESS_STATUS_LABEL[item.status] || item.status;
                return row;
            }));
 
@@ -10750,12 +11194,14 @@ const architectureMath = useMemo(() => {
                    const address = XLSX.utils.encode_cell({c: statusColIndex, r: R});
                    if (!ws[address]) continue;
                    const val = String(ws[address].v);
-                   if (val.includes("Supported") && !val.includes("Unsupported")) {
+                   if (val.includes("No issue observed")) {
                        ws[address].s = { fill: { fgColor: { rgb: "C6EFCE" } }, font: { color: { rgb: "006100" }, bold: true } };
-                   } else if (val.includes("Manual Check")) {
+                   } else if (val.includes("Discuss")) {
                        ws[address].s = { fill: { fgColor: { rgb: "FFEB9C" } }, font: { color: { rgb: "9C5700" }, bold: true } };
-                   } else if (val.includes("Unsupported")) {
+                   } else if (val.includes("Action needed")) {
                        ws[address].s = { fill: { fgColor: { rgb: "FFC7CE" } }, font: { color: { rgb: "9C0006" }, bold: true } };
+                   } else if (val.includes("Not validated")) {
+                       ws[address].s = { fill: { fgColor: { rgb: "D9D9D9" } }, font: { color: { rgb: "595959" }, bold: true } };
                    }
                }
            }
@@ -10764,18 +11210,32 @@ const architectureMath = useMemo(() => {
         }
 
         // Order sheets to perfectly match the Dashboard Summary rows
-        addSheet(readinessResults.cpus, "CPUs");
-        addSheet(readinessResults.hostConfig, "Host Config");
-        addSheet(readinessResults.clusters, "Cluster DRS");
-        addSheet(readinessResults.guestOs, "Guest OS", true);
-        addSheet(readinessResults.vmHw, "VM Hardware");
-        addSheet(readinessResults.vmTools, "VMware Tools");
-        addSheet(readinessResults.vNics, "VM Network (vNIC)");
-        addSheet(readinessResults.snapshots, "VM Snapshots");
-        addSheet(readinessResults.cdDrives, "VM CD-DVDs");
-        addSheet(readinessResults.datastores, "Datastores");
-        addSheet(readinessResults.dvSwitches, "Switches vDS vSS");
-        addSheet(readinessResults.ioDevices, "HBA(s)");
+        addSheet(readinessResults.cpus, "Server Hardware");
+        addSheet(readinessResults.ioDevices, "Storage Adapters");
+        addSheet(readinessResults.hostConfig, "Host Setup");
+        addSheet(readinessResults.clusters, "Clusters");
+        addSheet(readinessResults.guestOs, "Operating Systems", true);
+        addSheet(readinessResults.vmHw, "VM Compatibility");
+        addSheet(readinessResults.vmTools, "VM Tools");
+        addSheet(readinessResults.vNics, "VM Network Adapters");
+        addSheet(readinessResults.snapshots, "Snapshots");
+        addSheet(readinessResults.cdDrives, "Attached Media");
+        addSheet(readinessResults.datastores, "Storage");
+        addSheet(readinessResults.dvSwitches, "Host Networking");
+        addSheet(readinessResults.hostNics, "Host Uplinks");
+        addSheet(readinessResults.vmkernel, "VMkernel");
+        addSheet(readinessResults.inventoryIssues, "Inventory Issues");
+        addSheet(readinessResults.specialVms, "Special VMs");
+        addSheet(readinessResults.dataQuality, "Data Quality", true);
+        if ((customerChecks || []).length) {
+          const ccWs = XLSX.utils.json_to_sheet(customerChecks.map(item => ({
+            Question: item.prompt,
+            Status: ({ needs_confirmation: 'Needs confirmation', customer_confirmed: 'Customer confirmed', not_applicable: 'Not applicable', not_from_rvtools: 'Not available from RVTools' }[item.status] || item.status),
+            Notes: item.notes || ''
+          })));
+          ccWs['!cols'] = [{ wch: 80 }, { wch: 28 }, { wch: 40 }];
+          XLSX.utils.book_append_sheet(wb, ccWs, 'Customer Checks');
+        }
         
         XLSX.writeFile(wb, "VCF_Readiness_Report.xlsx");
       };
@@ -11617,10 +12077,8 @@ const architectureMath = useMemo(() => {
         setScopeOpen({});
         setReadinessTab('estate');
         setStatus(null);
-        setReadinessResults({
-          cpus: [], hostConfig: [], guestOs: [], ioDevices: [], vNics: [], vmTools: [], vmHw: [],
-          datastores: [], dvSwitches: [], cdDrives: [], snapshots: [], clusters: [], software: []
-        });
+        setReadinessResults(emptyReadinessResults());
+        setCustomerChecks(emptyCustomerChecks());
         setOptimizationData({ vms: [], hostStats: {} });
         setSiteProfiles([]);
         setLegacyClusters([]);
@@ -11665,7 +12123,7 @@ const architectureMath = useMemo(() => {
         const vmTotal = (fullRvData.vInfo || []).length;
         const clusters = new Set((rawRvData?.vHost || []).map(h => getCol(h, ['cluster'])).filter(Boolean)).size;
         const vcenters = new Set((rawRvData?.vHost || []).map(h => getCol(h, ['visdkserver', 'viserver', 'vcenter', 'vcenterserver', 'virtualcenter', 'server'])).filter(Boolean)).size;
-        const rows = Object.values(readinessResults || {}).flat().filter(r => r && r.status);
+        const rows = Object.values(readinessResults || {}).flatMap(v => Array.isArray(v) ? v : []).filter(r => r && r.status);
         return {
           hosts, vms, hostTotal, vmTotal, clusters, vcenters,
           excluded: (hostTotal - hosts) + (vmTotal - vms),
@@ -11807,26 +12265,28 @@ const architectureMath = useMemo(() => {
 
       const renderSummaryCard = (title, data) => {
         if (!data || data.length === 0) return null;
-        const counts = data.reduce((acc, curr) => { acc[curr.status] = (acc[curr.status] || 0) + 1; return acc; }, { green: 0, yellow: 0, red: 0 });
+        const counts = data.reduce((acc, curr) => { acc[curr.status] = (acc[curr.status] || 0) + 1; return acc; }, { green: 0, yellow: 0, red: 0, gray: 0 });
         return (
           <div className="bg-white dark:bg-slate-900 p-4 rounded border shadow-sm flex flex-col">
             <h4 className="font-bold text-gray-700 dark:text-slate-200 mb-3 border-b pb-2">{title} ({data.length})</h4>
-            <div className="flex justify-between text-sm mb-1"><span className="text-emerald-700 dark:text-emerald-300 font-semibold">Supported:</span><span className="font-bold">{counts.green}</span></div>
-            <div className="flex justify-between text-sm mb-1"><span className="text-amber-700 dark:text-amber-300 font-semibold">Verify/Legacy:</span><span className="font-bold">{counts.yellow}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-red-700 dark:text-red-300 font-semibold">Unsupported:</span><span className="font-bold">{counts.red}</span></div>
+            <div className="flex justify-between text-sm mb-1"><span className="text-red-700 dark:text-red-300 font-semibold">Action needed:</span><span className="font-bold">{counts.red}</span></div>
+            <div className="flex justify-between text-sm mb-1"><span className="text-amber-700 dark:text-amber-300 font-semibold">Discuss:</span><span className="font-bold">{counts.yellow}</span></div>
+            <div className="flex justify-between text-sm mb-1"><span className="text-emerald-700 dark:text-emerald-300 font-semibold">No issue observed:</span><span className="font-bold">{counts.green}</span></div>
+            {counts.gray > 0 && <div className="flex justify-between text-sm"><span className="text-slate-500 dark:text-slate-400 font-semibold">Not validated:</span><span className="font-bold">{counts.gray}</span></div>}
           </div>
         );
       };
 
       const renderTable = (data, headers, tabKey, hasVcgCol = false) => {
-        if (!data || data.length === 0) return <p className="text-gray-500 dark:text-slate-400 italic p-4">No data available. Ensure your uploaded files contain the necessary data.</p>;
+        if (!data || data.length === 0) return <p className="text-emerald-700 dark:text-emerald-300 font-semibold italic p-4">No issue observed in the supplied RVTools data for this category.</p>;
         
         const query = readinessSearch.trim().toLowerCase();
         let filteredData = data.filter(r => {
             if (viewFilter === 'ALL') return true;
-            if (viewFilter === 'ISSUES') return r.status !== 'green';
+            if (viewFilter === 'ISSUES') return r.status === 'red' || r.status === 'yellow';
             if (viewFilter === 'RED') return r.status === 'red';
             if (viewFilter === 'YELLOW') return r.status === 'yellow';
+            if (viewFilter === 'GRAY') return r.status === 'gray';
             return true;
         }).filter(r => {
             if (!query) return true;
@@ -11873,25 +12333,22 @@ const architectureMath = useMemo(() => {
               </thead>
               <tbody>
                 {pageRows.map((row) => (
-                  <tr key={row.id} className={`border-b ${row.status === 'green' ? 'bg-emerald-50 dark:bg-emerald-950/40' : (row.status === 'yellow' ? 'bg-amber-50 dark:bg-amber-950/40' : 'bg-red-50 dark:bg-red-950/40')}`}>
+                  <tr key={row.id} className={`border-b ${rowStatusClass(row.status)}`}>
                     <td className="p-3 font-medium border-r border-gray-200/50">{row.name}</td>
                     <td className="p-3 border-r border-gray-200/50 text-slate-600 dark:text-slate-300">{row.cluster || '-'}</td>
                     <td className="p-3 border-r border-gray-200/50 text-slate-600 dark:text-slate-300 truncate max-w-[150px]" title={row.host || '-'}>{row.host || '-'}</td>
                     <td className="p-3 border-r border-gray-200/50">{row.details}</td>
                     {hasVcgCol && <td className="p-3 border-r border-gray-200/50">{row.vcgLevel}</td>}
-                    <td className="p-2 border-r border-gray-200/50 w-48 text-center">
+                    <td className="p-2 border-r border-gray-200/50 w-56 text-center">
                       <select 
                         value={row.status}
                         onChange={(e) => handleStatusOverride(tabKey, row.id, e.target.value)}
-                        className={`w-full font-bold uppercase text-xs p-2 rounded cursor-pointer outline-none appearance-none text-center shadow-sm transition-colors ${
-                            row.status === 'green' ? 'bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200 hover:bg-emerald-300 dark:hover:bg-emerald-800' :
-                            row.status === 'yellow' ? 'bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 hover:bg-amber-300 dark:hover:bg-amber-800' :
-                            'bg-red-200 dark:bg-red-900 text-red-900 dark:text-red-200 hover:bg-red-300 dark:hover:bg-red-800'
-                        }`}
+                        className={`w-full font-bold text-xs p-2 rounded cursor-pointer outline-none appearance-none text-center shadow-sm transition-colors ${statusSelectClass(row.status)}`}
                       >
-                        <option value="green">✅ Supported</option>
-                        <option value="yellow">⚠️ Manual Verify</option>
-                        <option value="red">❌ Unsupported</option>
+                        <option value="red">Action needed</option>
+                        <option value="yellow">Discuss</option>
+                        <option value="green">No issue observed</option>
+                        <option value="gray">Not validated</option>
                       </select>
                     </td>
                   </tr>
@@ -12200,7 +12657,7 @@ const architectureMath = useMemo(() => {
                <div className="flex flex-wrap gap-3 justify-between items-end mb-6 shrink-0">
                   <div className="min-w-0 flex-1 basis-[12rem]">
                     <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Phase 1: Readiness & Validation</h2>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Start with the estate snapshot and scope, then the HCL verdicts that block or threaten a VCF 9.1 move.</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Estate snapshot first, then evidence from RVTools. Green means no issue was observed in the upload — not a support certification.</p>
                   </div>
                   <button onClick={exportReadiness} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded shadow flex items-center transition whitespace-nowrap shrink-0 ml-auto">
                     <svg className="w-4 h-4 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
@@ -12221,93 +12678,303 @@ const architectureMath = useMemo(() => {
                   </div>
                ) : (
                   <div className="flex-1 flex flex-col min-h-0">
-                     {readinessTab !== 'estate' && (
+                     {readinessTab !== 'estate' && readinessTab !== 'summary' && readinessTab !== 'quality' && readinessTab !== 'customer' && (
                      <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 p-3 rounded-lg shadow-sm border mb-4 shrink-0">
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Asset Filter:</span>
                         <select value={viewFilter} onChange={(e) => { setViewFilter(e.target.value); setTablePage(0); }} className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs rounded focus:ring-blue-500 focus:border-blue-500 block p-1.5 cursor-pointer font-bold">
-                           <option value="ALL">Show All Assets</option>
-                           <option value="ISSUES">Show All Issues (Red & Yellow)</option>
-                           <option value="RED">Show Unsupported Only (Red)</option>
-                           <option value="YELLOW">Show Manual Checks Only (Yellow)</option>
+                           <option value="ALL">Show all</option>
+                           <option value="ISSUES">Action needed & discuss</option>
+                           <option value="RED">Action needed only</option>
+                           <option value="YELLOW">Discuss only</option>
+                           <option value="GRAY">Not validated only</option>
                         </select>
                         <input type="search" value={readinessSearch} onChange={(e) => { setReadinessSearch(e.target.value); setTablePage(0); }} placeholder="Search name, cluster, host, details…" className="min-w-[16rem] flex-1 border border-slate-300 dark:border-slate-600 rounded px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100" />
                      </div>
                      )}
 
                      <div className="flex flex-wrap gap-2 border-b border-gray-300 dark:border-slate-600 mb-6 pb-2 shrink-0">
-                        {[
-                           { id: 'estate', label: `Estate Snapshot` },
-                           { id: 'summary', label: `Dashboard` },
-                           { id: 'cpus', label: `CPUs` },
-                           { id: 'clusters', label: `Cluster DRS` },
-                           { id: 'hostConfig', label: `Host Config` },
-                           { id: 'guestOs', label: `Guest OS` },
-                           { id: 'vmHw', label: `VM Hardware` },
-                           { id: 'vmTools', label: `VM Tools` },
-                           { id: 'vNics', label: `VM Network` },
-                           { id: 'snapshots', label: `VM Snapshots` },
-                           { id: 'cdDrives', label: `VM CD / Floppy` },
-                           { id: 'datastores', label: `Datastores` },
-                           { id: 'dvSwitches', label: `Switches` },
-                           { id: 'ioDevices', label: `HBA(s)` }
-                        ].map(tab => (
+                        {(() => {
+                           const tabs = [
+                              { id: 'estate', label: 'Estate', keys: [] },
+                              { id: 'summary', label: 'Needs Attention', keys: READINESS_TAB_GROUPS.attentionKeys },
+                              { id: 'hardware', label: 'Server Hardware', keys: ['cpus', 'ioDevices'] },
+                              { id: 'hostSetup', label: 'Host Setup', keys: ['hostConfig'] },
+                              { id: 'clusters', label: 'Clusters', keys: ['clusters'] },
+                              { id: 'vms', label: 'Virtual Machines', keys: ['guestOs', 'vmHw', 'vmTools', 'vNics'] },
+                              { id: 'media', label: 'Snapshots & Media', keys: ['snapshots', 'cdDrives'] },
+                              { id: 'storage', label: 'Storage', keys: ['datastores'] },
+                              { id: 'networking', label: 'Networking', keys: ['dvSwitches', 'hostNics', 'vmkernel'] },
+                              { id: 'inventory', label: 'Inventory Issues', keys: ['inventoryIssues'] },
+                              { id: 'special', label: 'Special VMs', keys: ['specialVms'] },
+                              { id: 'quality', label: 'Data Quality', keys: ['dataQuality'] },
+                              { id: 'customer', label: 'Customer Checks', keys: [] }
+                           ];
+                           return tabs.map(tab => {
+                              const counts = countTabIssues(readinessResults, tab.keys);
+                              const badgeN = tab.id === 'quality' ? counts.gray + counts.issues : counts.issues;
+                              const badgeCrit = counts.red;
+                              return (
                            <button key={tab.id} onClick={() => { setReadinessTab(tab.id); setTablePage(0); }} className={`py-2 px-4 font-semibold text-sm rounded transition-colors duration-200 whitespace-nowrap inline-flex items-center gap-2 ${readinessTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 hover:bg-slate-100'}`}>
                               {tab.label}
-                              {tab.id !== 'summary' && tab.id !== 'estate' && (() => {
-                                const rows = readinessResults[tab.id] || [];
-                                const issues = rows.filter(r => r.status === 'red' || r.status === 'yellow').length;
-                                const crit = rows.filter(r => r.status === 'red').length;
-                                if (!issues) return null;
-                                return <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${crit ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'}`}>{issues}</span>;
-                              })()}
+                              {tab.id !== 'estate' && tab.id !== 'customer' && badgeN > 0 && (
+                                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${badgeCrit ? 'bg-red-600 text-white' : (counts.issues ? 'bg-amber-500 text-white' : 'bg-slate-500 text-white')}`}>{badgeN}</span>
+                              )}
                            </button>
-                        ))}
+                              );
+                           });
+                        })()}
                      </div>
 
                      <div className="bg-white dark:bg-slate-900 p-6 rounded shadow-sm border border-gray-200 dark:border-slate-700 overflow-y-auto">
                         {readinessTab === 'estate' && renderEstateSnapshot()}
-                        {readinessTab === 'summary' && (
-                           <div>
-                              <h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">High-Level Infrastructure Readiness</h3>
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                                 {renderSummaryCard("CPUs", readinessResults.cpus)}
-                                 {renderSummaryCard("Host Config (NTP/DNS)", readinessResults.hostConfig)}
-                                 {renderSummaryCard("Cluster Automation", readinessResults.clusters)}
-                                 {renderSummaryCard("Guest OS", readinessResults.guestOs)}
-                                 {renderSummaryCard("VM Hardware", readinessResults.vmHw)}
-                                 {renderSummaryCard("VM Tools", readinessResults.vmTools)}
-                                 {renderSummaryCard("VM Network (vNIC)", readinessResults.vNics)}
-                                 {renderSummaryCard("VM Snapshots", readinessResults.snapshots)}
-                                 {renderSummaryCard("VM CD/DVDs", readinessResults.cdDrives)}
-                                 {renderSummaryCard("Datastores (VMFS)", readinessResults.datastores)}
-                                 {renderSummaryCard("Switches (vDS / vSS)", readinessResults.dvSwitches)}
-                          {renderSummaryCard("HBA(s)", readinessResults.ioDevices)}
-                                 <div className="bg-white dark:bg-slate-900 p-4 rounded border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Derived VCF Cores</div>
-                                    <div className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{derivedVcfCores.toLocaleString()}</div>
-                                    <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-                                       {edgeCoreFloorEligible ? `8-core Edge floor active (${totalEdgeSites} sites ≥ 10)` : `16-core floor (${totalEdgeSites} edge sites, need 10+ for 8-core rate)`}
-                                    </div>
-                                    <div className={`text-[10px] font-bold mt-2 ${vcfCoreDerivation.skippedHosts.length ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{vcfCoreDerivation.countedHosts} of {vcfCoreDerivation.hostCount} RVTools hosts counted</div>
-                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Shared metric: <span className="font-bold">{totalVcfCores.toLocaleString()}</span> · {vcfCoreMode === 'DERIVED' ? 'automatic' : 'manual override'}</div>
-                                    {vcfCoreMode === 'MANUAL' && <button type="button" onClick={() => setVcfCoreMode('DERIVED')} className="mt-2 text-[10px] font-bold text-blue-700 dark:text-blue-300 hover:underline">Restore RVTools-derived value</button>}
-                                    {vcfCoreDerivation.skippedHosts.length > 0 && <details className="mt-2"><summary className="cursor-pointer text-[10px] font-bold text-amber-700 dark:text-amber-300">Show skipped hosts</summary><div className="mt-1 max-h-24 overflow-y-auto text-[9px] text-amber-800 dark:text-amber-300">{vcfCoreDerivation.skippedHosts.map(row => <div key={row.hostName}>{row.hostName}: {row.error}</div>)}</div></details>}
+                        {readinessTab === 'summary' && (() => {
+                           const findings = buildAttentionFindings(readinessResults);
+                           const badge = (status) => (
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${status === 'red' ? 'bg-red-600 text-white' : status === 'yellow' ? 'bg-amber-500 text-white' : status === 'gray' ? 'bg-slate-500 text-white' : 'bg-emerald-600 text-white'}`}>{READINESS_STATUS_LABEL[status]}</span>
+                           );
+                           return (
+                           <div className="space-y-6">
+                              <div>
+                                 <h3 className="text-lg font-bold text-gray-800 dark:text-slate-100">Needs Attention</h3>
+                                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">One combined list of red and amber findings, plus missing-data items that must not look like a pass. RVTools observations are not a support certification.</p>
+                              </div>
+                              <div className="flex flex-wrap gap-2 text-[11px]">
+                                 <span className="px-2 py-1 rounded bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-200 font-semibold">Red — Action needed: RVTools observed a likely blocker.</span>
+                                 <span className="px-2 py-1 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 font-semibold">Amber — Discuss: RVTools found something requiring context.</span>
+                                 <span className="px-2 py-1 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 font-semibold">Green — No issue observed in the supplied data.</span>
+                                 <span className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold">Gray — Not validated: RVTools cannot prove it or required data is missing.</span>
+                              </div>
+                              {findings.length === 0 ? (
+                                 <p className="text-emerald-700 dark:text-emerald-300 font-semibold italic">No issue observed in the supplied RVTools data. Check Data Quality for sheets that were not uploaded, and Customer Checks for items RVTools cannot prove.</p>
+                              ) : (
+                              <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded">
+                                 <table className="min-w-full text-sm">
+                                    <thead className="bg-slate-50 dark:bg-slate-950 text-[10px] uppercase tracking-widest text-slate-500">
+                                       <tr>
+                                          <th className="text-left p-3">Status</th>
+                                          <th className="text-left p-3">What we found</th>
+                                          <th className="text-left p-3">Why it matters</th>
+                                          <th className="text-left p-3">What to ask</th>
+                                          <th className="text-left p-3">RVTools evidence</th>
+                                       </tr>
+                                    </thead>
+                                    <tbody>
+                                       {findings.map(row => (
+                                          <tr key={row.id} className={`border-t border-slate-100 dark:border-slate-800 ${rowStatusClass(row.status)}`}>
+                                             <td className="p-3 whitespace-nowrap">{badge(row.status)}</td>
+                                             <td className="p-3 font-semibold">
+                                                <button type="button" className="text-left hover:underline" onClick={() => { setReadinessTab(row.tab === 'quality' ? 'quality' : row.tab); setTablePage(0); }}>{row.found}</button>
+                                             </td>
+                                             <td className="p-3 text-slate-600 dark:text-slate-300">{row.why}</td>
+                                             <td className="p-3 text-slate-600 dark:text-slate-300">{row.ask}</td>
+                                             <td className="p-3 font-mono text-xs">{row.evidence}</td>
+                                          </tr>
+                                       ))}
+                                    </tbody>
+                                 </table>
+                              </div>
+                              )}
+                              <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded border border-slate-200 dark:border-slate-700">
+                                 <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Derived VCF Cores</div>
+                                 <div className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{derivedVcfCores.toLocaleString()}</div>
+                                 <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                                    {edgeCoreFloorEligible ? `8-core Edge floor active (${totalEdgeSites} sites ≥ 10)` : `16-core floor (${totalEdgeSites} edge sites, need 10+ for 8-core rate)`}
                                  </div>
+                                 <div className={`text-[10px] font-bold mt-2 ${vcfCoreDerivation.skippedHosts.length ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{vcfCoreDerivation.countedHosts} of {vcfCoreDerivation.hostCount} RVTools hosts counted</div>
+                              </div>
+                           </div>
+                           );
+                        })()}
+                        {readinessTab === 'hardware' && (
+                           <div className="space-y-8">
+                              <div>
+                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Server Hardware (CPUs)</h3>
+                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Matched to the VCG <span className="font-bold">CPUs</span> sheet (series + supported releases). CPU family alone cannot prove server support — confirm the complete server model in the Broadcom Compatibility Guide (Customer Checks).</p>
+                                 {renderTable(readinessResults.cpus, ['Asset Name', 'Cluster', 'Host(s)', 'CPU / VCG series', 'VCG Series', 'Result'], 'cpus', true)}
+                              </div>
+                              <div>
+                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Storage Adapters (HBA)</h3>
+                                 {renderTable(readinessResults.ioDevices, ['Asset Name', 'Cluster', 'Host(s)', 'HBA Model', 'Result'], 'ioDevices')}
                               </div>
                            </div>
                         )}
-                        {readinessTab === 'cpus' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Processor (CPU) Compatibility</h3><p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Matched to the VCG <span className="font-bold">CPUs</span> sheet (series + supported releases). OEM vendor/model is RVTools evidence — that pack has no server-model EOS table.</p>{renderTable(readinessResults.cpus, ['Asset Name', 'Cluster', 'Host(s)', 'CPU / VCG series', 'VCG Series', 'Readiness'], 'cpus', true)}</div>}
-                        {readinessTab === 'clusters' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Cluster Automation (DRS Fully Automated Required)</h3>{renderTable(readinessResults.clusters, ['Asset Name', 'Cluster', 'Host(s)', 'DRS Settings', 'Readiness'], 'clusters')}</div>}
-                        {readinessTab === 'hostConfig' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">ESXi Host NTP & DNS Configuration</h3>{renderTable(readinessResults.hostConfig, ['Asset Name', 'Cluster', 'Host(s)', 'NTP and DNS Details', 'Readiness'], 'hostConfig')}</div>}
-                        {readinessTab === 'guestOs' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Virtual Machine Guest OS Compatibility</h3>{renderTable(readinessResults.guestOs, ['Asset Name', 'Cluster', 'Host(s)', 'Configured Guest OS', 'VCG Tier', 'Readiness'], 'guestOs', true)}</div>}
-                        {readinessTab === 'vmHw' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">VM Hardware Version (Min vmx-17)</h3>{renderTable(readinessResults.vmHw, ['Asset Name', 'Cluster', 'Host(s)', 'Hardware Version', 'Upgrade Required?'], 'vmHw')}</div>}
-                        {readinessTab === 'vmTools' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">VMware Tools Version (Min v12.x)</h3>{renderTable(readinessResults.vmTools, ['Asset Name', 'Cluster', 'Host(s)', 'Installed Tools Version', 'Upgrade Required?'], 'vmTools')}</div>}
-                        {readinessTab === 'vNics' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Virtual Network Adapters (vNICs)</h3>{renderTable(readinessResults.vNics, ['Asset Name', 'Cluster', 'Host(s)', 'Virtual Adapter Type', 'Readiness'], 'vNics')}</div>}
-                        {readinessTab === 'snapshots' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Active VM Snapshots (&gt; 7 Days is Critical)</h3>{renderTable(readinessResults.snapshots, ['Asset Name', 'Cluster', 'Host(s)', 'Snapshot Details', 'Readiness'], 'snapshots')}</div>}
-                        {readinessTab === 'cdDrives' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Connected CD/DVD and Floppy Drives (vMotion Blocker)</h3>{renderTable(readinessResults.cdDrives, ['Asset Name', 'Cluster', 'Host(s)', 'Drive Details', 'Readiness'], 'cdDrives')}</div>}
-                        {readinessTab === 'datastores' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Datastore Configuration (VMFS 5/6 Supported, Min 20% Free)</h3>{renderTable(readinessResults.datastores, ['Asset Name', 'Cluster', 'Host(s)', 'Configuration Details', 'Readiness'], 'datastores')}</div>}
-                        {readinessTab === 'dvSwitches' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Switches — vDS ready / vSS blockers</h3><p className="text-xs text-slate-500 dark:text-slate-400 mb-3">VCF 9.x requires <span className="font-bold">Distributed Switches (vDS 7.x+)</span>. <span className="font-bold text-red-700 dark:text-red-300">vSphere Standard Switches (vSS)</span> from the RVTools <span className="font-mono">vSwitch</span> tab are hard blockers — they cannot be upgraded in place; migrate networking to a vDS before the VCF upgrade.</p>{renderTable(readinessResults.dvSwitches, ['Asset Name', 'Cluster', 'Host(s)', 'Switch Version', 'Readiness'], 'dvSwitches')}</div>}
-                        {readinessTab === 'ioDevices' && <div><h3 className="text-lg font-bold mb-4 text-gray-800 dark:text-slate-100">Host Bus Adapters (vHBA)</h3>{renderTable(readinessResults.ioDevices, ['Asset Name', 'Cluster', 'Host(s)', 'HBA Model', 'Readiness'], 'ioDevices')}</div>}
+                        {readinessTab === 'hostSetup' && (
+                           <div>
+                              <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Host Setup</h3>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Host Config plus ESX version/build, maintenance mode, and disconnected hosts. Forward/reverse DNS match and actual NTP skew are Customer Checks — RVTools only shows configured servers.</p>
+                              {renderTable(readinessResults.hostConfig, ['Asset Name', 'Cluster', 'Host(s)', 'Host setup details', 'Result'], 'hostConfig')}
+                           </div>
+                        )}
+                        {readinessTab === 'clusters' && (
+                           <div>
+                              <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Clusters</h3>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">DRS (Fully Automated required), HA, EVC, host count, mixed builds, and hardware consistency. vLCM image management is a Customer Check.</p>
+                              {renderTable(readinessResults.clusters, ['Asset Name', 'Cluster', 'Host(s)', 'Cluster settings', 'Result'], 'clusters')}
+                           </div>
+                        )}
+                        {readinessTab === 'vms' && (
+                           <div className="space-y-8">
+                              <div>
+                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Operating Systems (Guest OS)</h3>
+                                 {renderTable(readinessResults.guestOs, ['Asset Name', 'Cluster', 'Host(s)', 'Configured Guest OS', 'VCG Tier', 'Result'], 'guestOs', true)}
+                              </div>
+                              <div>
+                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">VM Compatibility (VM Hardware)</h3>
+                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Preferred minimum vmx-17.</p>
+                                 {renderTable(readinessResults.vmHw, ['Asset Name', 'Cluster', 'Host(s)', 'Hardware Version', 'Result'], 'vmHw')}
+                              </div>
+                              <div>
+                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">VM Tools</h3>
+                                 {renderTable(readinessResults.vmTools, ['Asset Name', 'Cluster', 'Host(s)', 'Installed Tools Version', 'Result'], 'vmTools')}
+                              </div>
+                              <div>
+                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">VM Network Adapters</h3>
+                                 {renderTable(readinessResults.vNics, ['Asset Name', 'Cluster', 'Host(s)', 'Virtual Adapter Type', 'Result'], 'vNics')}
+                              </div>
+                           </div>
+                        )}
+                        {readinessTab === 'media' && (
+                           <div className="space-y-8">
+                              <div>
+                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Snapshots</h3>
+                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Snapshots older than 7 days are treated as action needed.</p>
+                                 {renderTable(readinessResults.snapshots, ['Asset Name', 'Cluster', 'Host(s)', 'Snapshot Details', 'Result'], 'snapshots')}
+                              </div>
+                              <div>
+                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Attached Media (CD / Floppy)</h3>
+                                 {renderTable(readinessResults.cdDrives, ['Asset Name', 'Cluster', 'Host(s)', 'Drive Details', 'Result'], 'cdDrives')}
+                              </div>
+                           </div>
+                        )}
+                        {readinessTab === 'storage' && (
+                           <div>
+                              <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Storage</h3>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Datastores, capacity, type, host accessibility, and paths. Missing <span className="font-mono">vMultiPath</span> is not a pass.</p>
+                              {renderTable(readinessResults.datastores, ['Asset Name', 'Cluster', 'Host(s)', 'Configuration Details', 'Result'], 'datastores')}
+                           </div>
+                        )}
+                        {readinessTab === 'networking' && (
+                           <div className="space-y-8">
+                              <div>
+                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Host Networking (Switches)</h3>
+                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">VCF 9.x requires <span className="font-bold">Distributed Switches (vDS 7.x+)</span>. Standard switches cannot be upgraded in place.</p>
+                                 {renderTable(readinessResults.dvSwitches, ['Asset Name', 'Cluster', 'Host(s)', 'Switch Version', 'Result'], 'dvSwitches')}
+                              </div>
+                              <div>
+                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Host uplinks</h3>
+                                 {renderTable(readinessResults.hostNics, ['Asset Name', 'Cluster', 'Host(s)', 'Adapter / uplink', 'Result'], 'hostNics')}
+                              </div>
+                              <div>
+                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">VMkernel placement</h3>
+                                 {renderTable(readinessResults.vmkernel, ['Asset Name', 'Cluster', 'Host(s)', 'VMkernel details', 'Result'], 'vmkernel')}
+                              </div>
+                           </div>
+                        )}
+                        {readinessTab === 'inventory' && (
+                           <div>
+                              <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Inventory Issues</h3>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">RVTools found inventory records that may need cleanup before migration. Duplicate MAC/UUID and orphaned VM checks belong here.</p>
+                              {renderTable(readinessResults.inventoryIssues, ['Asset Name', 'Cluster', 'Host(s)', 'What we found', 'Result'], 'inventoryIssues')}
+                           </div>
+                        )}
+                        {readinessTab === 'special' && (
+                           <div>
+                              <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Special VMs</h3>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">These VMs have configurations that may limit where or how they can move. RDMs, passthrough, encryption, FT, and affinity are grouped here instead of separate tabs.</p>
+                              {renderTable(readinessResults.specialVms, ['Asset Name', 'Cluster', 'Host(s)', 'Configuration', 'Result'], 'specialVms')}
+                           </div>
+                        )}
+                        {readinessTab === 'quality' && (() => {
+                           const present = fullRvData?._present || {};
+                           const counts = fullRvData?._sheetCounts || {};
+                           const allSheets = fullRvData?._allSheets || [];
+                           const meta = fullRvData?._exportMeta || {};
+                           const received = Object.keys(present).filter(k => present[k]);
+                           const missing = RV_EXPECTED_SHEETS.filter(s => !present[s]);
+                           const vcenters = [...new Set((rawRvData?.vHost || []).map(h => rvVcenterName(h)).filter(v => v && v !== '(no vCenter)'))];
+                           const excludedHostN = Object.values(excludedHosts).filter(Boolean).length;
+                           const excludedVmN = Object.values(excludedVMs).filter(Boolean).length;
+                           const assessed = (readinessResults.dataQuality || []).filter(r => r.status === 'green');
+                           const partial = (readinessResults.dataQuality || []).filter(r => r.status === 'yellow');
+                           const none = (readinessResults.dataQuality || []).filter(r => r.status === 'gray');
+                           return (
+                           <div className="space-y-6">
+                              <div>
+                                 <h3 className="text-lg font-bold text-gray-800 dark:text-slate-100">Data Quality</h3>
+                                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Missing RVTools data must not look like a passing result. Categories that cannot be assessed are gray — not green.</p>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                                 <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3"><div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Export date</div><div className="font-bold mt-1">{meta.date || 'Not in file properties'}</div></div>
+                                 <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3"><div className="text-[10px] font-black uppercase tracking-widest text-slate-500">RVTools version</div><div className="font-bold mt-1">{meta.version || 'Not reported'}</div></div>
+                                 <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3"><div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Sheets received</div><div className="font-bold mt-1">{received.length}</div></div>
+                                 <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3"><div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Sheets missing</div><div className="font-bold mt-1">{missing.length}</div></div>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                 <div>
+                                    <h4 className="font-bold mb-2">Sheets received</h4>
+                                    <ul className="text-xs space-y-1 font-mono">{received.map(s => <li key={s}>{s} — {(counts[s] || 0).toLocaleString()} rows</li>)}</ul>
+                                    {allSheets.filter(s => !s.tab).length > 0 && <div className="mt-2 text-xs text-slate-500">Also in file: {allSheets.filter(s => !s.tab).map(s => `${s.name} (${s.rows})`).join(', ')}</div>}
+                                 </div>
+                                 <div>
+                                    <h4 className="font-bold mb-2">Sheets missing</h4>
+                                    <ul className="text-xs space-y-1 font-mono">{missing.length ? missing.map(s => <li key={s}>{s}</li>) : <li>None of the expected tabs are missing</li>}</ul>
+                                    <h4 className="font-bold mt-4 mb-2">Scope</h4>
+                                    <p className="text-xs">vCenters: {vcenters.length ? vcenters.join(', ') : 'not reported'}</p>
+                                    <p className="text-xs">Hosts/VMs excluded from scope: {excludedHostN} hosts, {excludedVmN} VMs</p>
+                                    <p className="text-xs mt-2">Categories fully assessed: {assessed.length} · partially assessed: {partial.length} · not assessable: {none.length}</p>
+                                 </div>
+                              </div>
+                              {renderTable(readinessResults.dataQuality, ['Check', 'Cluster', 'Host(s)', 'Result', 'Sheets', 'Status'], 'dataQuality', true)}
+                           </div>
+                           );
+                        })()}
+                        {readinessTab === 'customer' && (
+                           <div className="space-y-4">
+                              <div>
+                                 <h3 className="text-lg font-bold text-gray-800 dark:text-slate-100">Customer Checks</h3>
+                                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Non-RVTools requirements stay separate. These do not receive a green RVTools verdict. DNS reachability, vLCM, BCG, certificates, and physical networking belong here.</p>
+                              </div>
+                              <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded">
+                                 <table className="min-w-full text-sm">
+                                    <thead className="bg-slate-50 dark:bg-slate-950 text-[10px] uppercase tracking-widest text-slate-500">
+                                       <tr>
+                                          <th className="text-left p-3">Question</th>
+                                          <th className="text-left p-3 w-56">Status</th>
+                                          <th className="text-left p-3">Notes</th>
+                                       </tr>
+                                    </thead>
+                                    <tbody>
+                                       {customerChecks.map(item => (
+                                          <tr key={item.id} className="border-t border-slate-100 dark:border-slate-800">
+                                             <td className="p-3 font-medium">{item.prompt}</td>
+                                             <td className="p-2">
+                                                <select
+                                                   value={item.status}
+                                                   onChange={(e) => setCustomerChecks(prev => prev.map(c => c.id === item.id ? { ...c, status: e.target.value } : c))}
+                                                   className="w-full text-xs font-bold p-2 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-950"
+                                                >
+                                                   <option value="needs_confirmation">Needs confirmation</option>
+                                                   <option value="customer_confirmed">Customer confirmed</option>
+                                                   <option value="not_applicable">Not applicable</option>
+                                                   <option value="not_from_rvtools">Not available from RVTools</option>
+                                                </select>
+                                             </td>
+                                             <td className="p-2">
+                                                <input
+                                                   type="text"
+                                                   value={item.notes || ''}
+                                                   onChange={(e) => setCustomerChecks(prev => prev.map(c => c.id === item.id ? { ...c, notes: e.target.value } : c))}
+                                                   placeholder="Optional note"
+                                                   className="w-full text-xs border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 bg-white dark:bg-slate-900"
+                                                />
+                                             </td>
+                                          </tr>
+                                       ))}
+                                    </tbody>
+                                 </table>
+                              </div>
+                           </div>
+                        )}
                      </div>
                   </div>
                )}
