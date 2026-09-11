@@ -7862,6 +7862,8 @@ const VCFApp = () => {
       const [fleetDrMaturity, setFleetDrMaturity] = useState('GOOD'); // GOOD | BETTER | BEST
       const preDrMinimumSelectionsRef = useRef(null);
       const preDrMinimumWlCountRef = useRef(null);
+      // Snapshot of Good/Better/Best auto-selection — blue target stays here while checkbox clicks raise the red ceiling.
+      const fleetDrMaturityBaselineRef = useRef(null);
 
       const [hldIncSEC, setHldIncSEC] = useState(false);
       // Avi / HCX / DSM scope is controlled via architectDecisionInputs.*Scope dropdowns in Phase 6
@@ -8337,7 +8339,8 @@ const VCFApp = () => {
         if (/sddc\s*manager/.test(n)) return 'MUST';
         if (/management\s*domain\s*vcenter/.test(n)) return 'MUST';
         if (/management\s*domain\s*nsx\s*managers/.test(n)) return 'MUST';
-        if (/management\s*domain\s*nsx\s*edges/.test(n)) return 'MUST';
+        // Edges optional — design may use VNAs instead (don't lock on).
+        if (/management\s*domain\s*nsx\s*edges/.test(n)) return 'IF_PRIMARY';
         if (/cloud\s*proxy/.test(n)) return 'MUST';
         if (/protection\s*and\s*recovery|site\s*recovery|\bsrm\b/.test(n)) return 'MUST';
         // P3–P4 — not required for Good VM recovery; off by default, unlocked to pre-size Better/Best.
@@ -8372,8 +8375,8 @@ const VCFApp = () => {
         if (tier === 'must') return { text: 'DR min', title: 'P0 recovery-site foundation — must already be running at the DR site (locked on)', className: 'bg-violet-600 text-white' };
         if (tier === 'from_primary') return { text: 'From primary', title: 'Included because it was enabled on primary — click to remove', className: 'bg-sky-100 dark:bg-sky-950/50 text-sky-800 dark:text-sky-200' };
         if (tier === 'recommend') return { text: 'Recommend', title: 'Running on primary — click to size at recovery (Better)', className: 'bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200' };
-        if (tier === 'restore') return { text: 'Restore later', title: 'Not required to power on VMs — restore onto recovery VCFMS (locked off)', className: 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300' };
-        if (tier === 'defer') return { text: 'Restore later', title: 'Not required for Good-minimum VM recovery — check only to pre-size Better/Best (Automation, Ops, Blueprint)', className: 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300' };
+        if (tier === 'restore') return { text: 'Restore later', title: 'Not in maturity target — click to include in DR payload and see size vs Good/Better/Best', className: 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300' };
+        if (tier === 'defer') return { text: 'Restore later', title: 'Not required for Good-minimum — check to pre-size (Automation, Ops, Blueprint)', className: 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300' };
         if (tier === 'addon') return { text: 'Opt-in', title: 'Not DR minimum — check if critical apps need Avi / WLD / SSP at recovery', className: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200' };
         return null;
       };
@@ -8426,7 +8429,9 @@ const VCFApp = () => {
         setSizingSelections((prev) => {
           if (!prev || Object.keys(prev).length === 0) return prev;
           const snap = preDrMinimumSelectionsRef.current || prev;
-          return applyFleetDrMinimumSelections_(prev, snap, next);
+          const applied = applyFleetDrMinimumSelections_(prev, snap, next);
+          fleetDrMaturityBaselineRef.current = applied;
+          return applied;
         });
       };
 
@@ -8465,7 +8470,9 @@ const VCFApp = () => {
               preDrMinimumWlCountRef.current = wlDomainCount;
             }
             const base = preDrMinimumSelectionsRef.current || prev;
-            return applyFleetDrMinimumSelections_(base, base, fleetDrMaturity);
+            const applied = applyFleetDrMinimumSelections_(base, base, fleetDrMaturity);
+            fleetDrMaturityBaselineRef.current = applied;
+            return applied;
           });
           setPlacementPayloadScope('DR_MINIMUM');
           return;
@@ -8478,6 +8485,7 @@ const VCFApp = () => {
           preDrMinimumSelectionsRef.current = null;
           preDrMinimumWlCountRef.current = null;
         }
+        fleetDrMaturityBaselineRef.current = null;
         setPlacementPayloadScope('FULL_ESTATE');
       };
 
@@ -8709,10 +8717,15 @@ const VCFApp = () => {
                 }
               });
               setSizingSelections(applyFleetDrMinimumSelections_(merged, snap, fleetDrMaturity));
+              if (!fleetDrMaturityBaselineRef.current) {
+                fleetDrMaturityBaselineRef.current = applyFleetDrMinimumSelections_(merged, snap, fleetDrMaturity);
+              }
             } else {
               preDrMinimumSelectionsRef.current = initialSelections;
               preDrMinimumWlCountRef.current = wlDomainCount;
-              setSizingSelections(applyFleetDrMinimumSelections_(initialSelections, initialSelections, fleetDrMaturity));
+              const applied = applyFleetDrMinimumSelections_(initialSelections, initialSelections, fleetDrMaturity);
+              fleetDrMaturityBaselineRef.current = applied;
+              setSizingSelections(applied);
             }
           } else {
             setSizingSelections(initialSelections);
@@ -8753,10 +8766,9 @@ const VCFApp = () => {
           const isWldVc = isWldVcenterComponent(comp);
           const isWldComp = isWldCatalogComponent(comp);
 
-          // Restore-later stays forced off even if something tries to toggle it.
+          // Restore-later stays off by default but is clickable to preview DR size.
           if (placementPayloadScope === 'DR_MINIMUM') {
               const role = fleetDrRoleForSelection_(comp, sizingSelections?.[comp]);
-              if (role === 'RESTORE_ONLY' && checked) return;
               if (role === 'MUST' && !checked) return;
           }
 
@@ -9911,36 +9923,52 @@ if (rvData.vHBA) {
             const clusterName = getCol(ds, ['cluster', 'clustername']) || 'Shared';
             const hostName = getCol(ds, ['host', 'hosts']) || 'Multiple';
             if (!dsName) return;
-            const dsType = String(getCol(ds, ['type'])).toLowerCase();
+            const dsType = String(getCol(ds, ['type']) || '').toLowerCase();
             const dsNameStr = String(dsName).toLowerCase();
-            const dsVersion = String(getCol(ds, ['version', 'majorversion', 'vmfsversion']));
+            const dsVersion = String(getCol(ds, ['version', 'majorversion', 'vmfsversion']) || '');
             const freePct = parseFloat(getCol(ds, ['freepercentage', 'freepct', 'free']));
-            let status = 'green';
-            let dsDetails = `Format: ${dsType.toUpperCase()} | Version: ${dsVersion || 'N/A'}`;
-            
-            if (dsType.includes('nutanix') || dsType.includes('ndfs') || dsNameStr.includes('nutanix') || dsNameStr.includes('ctrldir')) {
-                status = 'red'; 
-                dsDetails += ` [CRITICAL: Nutanix Storage Unsupported in VCF]`;
-            } else if (dsType === 'vmfs') {
-                const versionMatch = dsVersion.match(/(\d+)/);
-                if (versionMatch && parseInt(versionMatch[1], 10) < 5) {
-                    status = 'red'; dsDetails += ` [VMFS-${versionMatch[1]} Unsupported]`;
-                }
-            }
-            if (!isNaN(freePct)) {
-                if (freePct < 10) { status = 'red'; dsDetails += ` | Free: ${freePct}% [CRITICAL]`; }
-                else if (freePct < 20) { if (status !== 'red') status = 'yellow'; dsDetails += ` | Free: ${freePct}% [WARNING]`; }
-                else dsDetails += ` | Free: ${freePct}%`;
-            }
             const accessible = getCol(ds, ['accessible', 'access', 'hostsaccessible', 'connectedhosts']);
             const hostCountDs = getCol(ds, ['numberofhosts', 'hostcount', 'numhosts']);
-            if (accessible) dsDetails += ` | Access: ${accessible}`;
-            if (hostCountDs) dsDetails += ` | Hosts: ${hostCountDs}`;
-            if (/false|no|0/i.test(String(accessible)) && String(accessible).trim() !== '') {
-              status = 'red';
-              dsDetails += ' [not accessible]';
+            const isNutanix = dsType.includes('nutanix') || dsType.includes('ndfs') || dsNameStr.includes('nutanix') || dsNameStr.includes('ctrldir');
+            const versionMatch = dsVersion.match(/(\d+)/);
+            const vmfsTooOld = dsType === 'vmfs' && versionMatch && parseInt(versionMatch[1], 10) < 5;
+            const accessBad = /false|no|0/i.test(String(accessible || '')) && String(accessible || '').trim() !== '';
+            let status = 'green';
+            let formatFlag = 'green';
+            if (isNutanix || vmfsTooOld) { status = 'red'; formatFlag = 'red'; }
+            if (Number.isFinite(freePct)) {
+              if (freePct < 10) status = 'red';
+              else if (freePct < 20 && status !== 'red') status = 'yellow';
             }
-            dsRes.push({ id: genId(), name: dsName, cluster: clusterName, host: hostName, details: dsDetails, status: status });
+            if (accessBad) status = 'red';
+            const formatLabel = isNutanix
+              ? `${(dsType || 'storage').toUpperCase()} [Nutanix unsupported]`
+              : (vmfsTooOld ? `VMFS-${versionMatch[1]} unsupported` : ((dsType || 'unknown').toUpperCase()));
+            const versionLabel = dsVersion || 'N/A';
+            let freeLabel = Number.isFinite(freePct) ? `${freePct}%` : '—';
+            if (Number.isFinite(freePct) && freePct < 10) freeLabel = `${freePct}% [CRITICAL]`;
+            else if (Number.isFinite(freePct) && freePct < 20) freeLabel = `${freePct}% [WARNING]`;
+            const accessLabel = accessible != null && String(accessible).trim() !== '' ? String(accessible) : '—';
+            const hostsLabel = hostCountDs ? String(hostCountDs) : (hostName || '—');
+            const details = `Format: ${formatLabel} | Version: ${versionLabel} | Free: ${freeLabel} | Access: ${accessLabel}`;
+            dsRes.push({
+              id: genId(),
+              name: dsName,
+              cluster: clusterName,
+              host: hostName,
+              details,
+              format: formatLabel,
+              version: versionLabel,
+              free: freeLabel,
+              access: accessLabel,
+              hosts: hostsLabel,
+              status,
+              flags: {
+                format: formatFlag,
+                free: !Number.isFinite(freePct) ? 'green' : (freePct < 10 ? 'red' : freePct < 20 ? 'yellow' : 'green'),
+                access: accessBad ? 'red' : 'green'
+              }
+            });
           });
         }
 
@@ -10016,13 +10044,52 @@ if (rvData.vHBA) {
               mixedBuilds ? `Mixed builds: ${builds.join(' · ')}` : (builds[0] ? `Build: ${builds[0]}` : 'Build: n/a'),
               mixedHw ? `Hardware mixed: ${[...cpus, ...oems].slice(0, 3).join(' · ')}` : (oems[0] || cpus[0] || 'Hardware consistent')
             ];
-            clusterRes.push({ id: genId(), name: clName, cluster: clName, host: String(hostCount), details: bits.join(' | '), status });
+            const drsLabel = `${(drsEnabled === 'true' || rvTruthy(drsEnabled)) ? 'Yes' : 'No'} / ${drsMode || 'none'}`;
+            const haLabel = haEnabled || 'not reported';
+            const evcLabel = evcMode || 'not reported';
+            const buildLabel = mixedBuilds ? `Mixed: ${builds.join(' · ')}` : (builds[0] || 'n/a');
+            const hwLabel = mixedHw ? `Mixed: ${[...cpus, ...oems].slice(0, 3).join(' · ')}` : (oems[0] || cpus[0] || 'Consistent');
+            clusterRes.push({
+              id: genId(),
+              name: clName,
+              cluster: clName,
+              host: String(hostCount),
+              details: bits.join(' | '),
+              drs: drsLabel,
+              ha: haLabel,
+              evc: evcLabel,
+              hosts: String(hostCount),
+              build: buildLabel,
+              hardware: hwLabel,
+              status,
+              flags: {
+                drs: drsOk ? 'green' : 'red',
+                ha: haOk === false ? 'red' : (haOk === null ? 'yellow' : 'green'),
+                evc: (!evcMode || /disabled|false|none/i.test(evcMode)) ? 'yellow' : 'green',
+                build: mixedBuilds ? 'yellow' : 'green',
+                hardware: mixedHw ? 'yellow' : 'green'
+              }
+            });
           });
         }
         Object.keys(hostIndex).forEach(clName => {
           if (clusterRes.some(r => r.name === clName)) return;
           const hostsInCluster = hostIndex[clName] || [];
-          clusterRes.push({ id: genId(), name: clName, cluster: clName, host: String(hostsInCluster.length), details: `Cluster row missing from vCluster · Hosts: ${hostsInCluster.length} (DRS/HA/EVC not assessed)`, status: rvSheetPresent(rvData, 'vCluster') ? 'yellow' : 'gray' });
+          clusterRes.push({
+            id: genId(),
+            name: clName,
+            cluster: clName,
+            host: String(hostsInCluster.length),
+            details: `Cluster row missing from vCluster · Hosts: ${hostsInCluster.length} (DRS/HA/EVC not assessed)`,
+            drs: 'not assessed',
+            ha: 'not assessed',
+            evc: 'not assessed',
+            hosts: String(hostsInCluster.length),
+            build: 'n/a',
+            hardware: 'n/a',
+            status: rvSheetPresent(rvData, 'vCluster') ? 'yellow' : 'gray',
+            flags: { drs: 'yellow', ha: 'yellow', evc: 'yellow', build: 'green', hardware: 'green' }
+          });
         });
 
         if (rvData.vCD) {
@@ -10148,7 +10215,7 @@ if (rvData.vHBA) {
             const state = String(getCol(p, ['state', 'pathstate', 'status']) || '');
             (byDs[ds] = byDs[ds] || []).push({ hostName, paths, state });
             if (!isNaN(paths) && paths < 2) {
-              dsRes.push({ id: genId(), name: ds, cluster: getCol(p, ['cluster']) || 'Shared', host: hostName, details: `Single storage path (${paths}) — redundancy not observed`, status: 'yellow' });
+              dsRes.push({ id: genId(), name: ds, cluster: getCol(p, ['cluster']) || 'Shared', host: hostName, details: `Single storage path (${paths}) — redundancy not observed`, format: 'Multipath', version: '—', free: '—', access: `Single path (${paths})`, hosts: hostName || '—', status: 'yellow', flags: { format: 'yellow', free: 'green', access: 'yellow' } });
             }
           });
         }
@@ -10243,8 +10310,8 @@ if (rvData.vHBA) {
         });
 
         if (!rvSheetPresent(rvData, 'vHBA')) ioRes.push({ id: genId(), name: 'Storage adapters', cluster: '', host: '', details: 'Not assessed—`vHBA` missing', status: 'gray' });
-        if (!rvSheetPresent(rvData, 'vMultiPath')) dsRes.push({ id: genId(), name: 'Multipathing', cluster: '', host: '', details: 'Not assessed—`vMultiPath` missing — storage-path redundancy cannot be assessed', status: 'gray' });
-        if (!rvSheetPresent(rvData, 'vCluster')) clusterRes.push({ id: genId(), name: 'Cluster configuration', cluster: '', host: '', details: 'Not assessed—`vCluster` missing', status: 'gray' });
+        if (!rvSheetPresent(rvData, 'vMultiPath')) dsRes.push({ id: genId(), name: 'Multipathing', cluster: '', host: '', details: 'Not assessed—`vMultiPath` missing — storage-path redundancy cannot be assessed', format: '—', version: '—', free: '—', access: '—', hosts: '—', status: 'gray', flags: { format: 'green', free: 'green', access: 'green' } });
+        if (!rvSheetPresent(rvData, 'vCluster')) clusterRes.push({ id: genId(), name: 'Cluster configuration', cluster: '', host: '', details: 'Not assessed—`vCluster` missing', drs: '—', ha: '—', evc: '—', hosts: '—', build: '—', hardware: '—', status: 'gray', flags: { drs: 'green', ha: 'green', evc: 'green', build: 'green', hardware: 'green' } });
         if (!rvSheetPresent(rvData, 'vNIC')) hostNicRes.push({ id: genId(), name: 'Host uplinks', cluster: '', host: '', details: 'Not assessed—`vNIC` missing', status: 'gray' });
         if (!rvSheetPresent(rvData, 'vSC_VMK') && !rvSheetPresent(rvData, 'vPort')) vmkRes.push({ id: genId(), name: 'VMkernel placement', cluster: '', host: '', details: 'Not assessed—`vSC_VMK` / `vPort` missing', status: 'gray' });
         if (!rvSheetPresent(rvData, 'vHealth')) inventoryRes.push({ id: genId(), name: 'Inventory health sheet', cluster: '', host: '', details: 'Not assessed—`vHealth` missing. Duplicate MAC/UUID checks below still ran from vInfo/vNetwork.', status: 'gray' });
@@ -10742,14 +10809,49 @@ const architectureMath = useMemo(() => {
          };
 
          const primary = resolveEnabledPayload_(sizingSelections, { multiInstance: multiInstanceSizing });
-         targetVcpu = primary.targetVcpu;
-         targetRam = primary.targetRam;
-         targetStorage = primary.targetStorage;
-         resolvedComponents.push(...primary.resolvedComponents);
+         // DR-only: blue target = Good/Better/Best baseline; red ceiling = current checkboxes (Restore later / Opt-in clicks).
+         let maturityTargetPayload = null;
+         let fullEstatePayload = null;
+         if (drMinimumSizing) {
+           const snap = preDrMinimumSelectionsRef.current || sizingSelections;
+           if (!fleetDrMaturityBaselineRef.current) {
+             fleetDrMaturityBaselineRef.current = applyFleetDrMinimumSelections_(snap, snap, fleetDrMaturity);
+           }
+           const maturitySel = fleetDrMaturityBaselineRef.current;
+           const maturity = resolveEnabledPayload_(maturitySel, {
+             multiInstance: false,
+             wlCount: Math.max(0, parseInt(wlDomainCount, 10) || 0),
+             skipMsPair: true,
+             quietMissing: true,
+             summaryOnly: true,
+           });
+           maturityTargetPayload = {
+             targetVcpu: maturity.targetVcpu,
+             targetRam: maturity.targetRam,
+             targetStorage: maturity.targetStorage,
+             mgmtInstanceCount: 1,
+           };
+           // Fit validation uses current checkboxes (includes Restore later / Edges / Avi clicks).
+           targetVcpu = primary.targetVcpu;
+           targetRam = primary.targetRam;
+           targetStorage = primary.targetStorage;
+           resolvedComponents.push(...primary.resolvedComponents);
+           fullEstatePayload = {
+             targetVcpu: primary.targetVcpu,
+             targetRam: primary.targetRam,
+             targetStorage: primary.targetStorage,
+             mgmtInstanceCount: 1,
+           };
+         } else {
+           targetVcpu = primary.targetVcpu;
+           targetRam = primary.targetRam;
+           targetStorage = primary.targetStorage;
+           resolvedComponents.push(...primary.resolvedComponents);
+         }
 
          // Primary-estate ceiling for DR_MINIMUM: Primary Required ∪ pre–DR selections ∪ DR-min sized
          // rows at ONE site. Guarantees ceiling ≥ DR-min (fixes 208 vs 252 inversion).
-         let fullEstatePayload = null;
+         let primaryEstateCeiling = null;
          if (drMinimumSizing) {
            const snap = preDrMinimumSelectionsRef.current || sizingSelections;
            const fullSel = buildPrimaryEstateSelections_(snap, sizingSelections);
@@ -10761,7 +10863,7 @@ const architectureMath = useMemo(() => {
              quietMissing: true,
              summaryOnly: true,
            });
-           fullEstatePayload = {
+           primaryEstateCeiling = {
              targetVcpu: full.targetVcpu,
              targetRam: full.targetRam,
              targetStorage: full.targetStorage,
@@ -11010,8 +11112,11 @@ const architectureMath = useMemo(() => {
            multiInstanceSizing,
            drMinimumSizing,
            fullEstatePayload,
+           maturityTargetPayload,
+           primaryEstateCeiling,
+           fleetDrMaturity,
          };
-      }, [rawRvData, sizingSelections, normalizedSizing, displayNvmeMinGb, optTierRatio, wlDomainCount, archMode, gfHosts, gfCores, gfMemGB, gfCpuRatio, gfMemRatio, gfStorageType, gfNics, fleetMgmtCluster, designIdLookup_, hldInstanceStrategy, hldDrFleetPair, gfInstanceCount, multiInstanceClusters, architectDecisionInputs.hldFleetBoundary, fleetCount, placementPayloadScope]);
+      }, [rawRvData, sizingSelections, normalizedSizing, displayNvmeMinGb, optTierRatio, wlDomainCount, archMode, gfHosts, gfCores, gfMemGB, gfCpuRatio, gfMemRatio, gfStorageType, gfNics, fleetMgmtCluster, designIdLookup_, hldInstanceStrategy, hldDrFleetPair, gfInstanceCount, multiInstanceClusters, architectDecisionInputs.hldFleetBoundary, fleetCount, placementPayloadScope, fleetDrMaturity]);
 
       const recaptureMath = useMemo(() => {
         if (!rawRvData || !rawRvData.vHost || !rawRvData.vInfo) return [];
@@ -13049,13 +13154,55 @@ const architectureMath = useMemo(() => {
                            </div>
                            );
                         })()}
-                        {readinessTab === 'clusters' && (
-                           <div>
-                              <h3 className="text-base font-bold mb-1 text-gray-800 dark:text-slate-100">Clusters</h3>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">DRS (Fully Automated required), HA, EVC, host count, mixed builds, and hardware consistency. <span className="font-semibold">EVC not reported</span> is Discuss. Host count is in Host(s). vLCM is a Customer Check.</p>
-                              {renderTable(readinessResults.clusters, ['Asset Name', 'Cluster', 'Host count', 'Cluster settings', 'Result'], 'clusters', false, { powerFilter: false })}
+                        {readinessTab === 'clusters' && (() => {
+                           const rows = readinessResults.clusters || [];
+                           const drsRows = rows.filter(r => r.flags && r.flags.drs !== 'green');
+                           const haRows = rows.filter(r => r.flags && r.flags.ha !== 'green');
+                           const evcRows = rows.filter(r => r.flags && r.flags.evc !== 'green');
+                           const buildHwRows = rows.filter(r => r.flags && (r.flags.build !== 'green' || r.flags.hardware !== 'green'));
+                           const clusterCols = [
+                             { key: 'name', label: 'Cluster' },
+                             { key: 'hosts', label: 'Hosts' },
+                             { key: 'drs', label: 'DRS', flagKey: 'drs' },
+                             { key: 'ha', label: 'HA', flagKey: 'ha' },
+                             { key: 'evc', label: 'EVC', flagKey: 'evc' },
+                             { key: 'build', label: 'ESXi build', flagKey: 'build' },
+                             { key: 'hardware', label: 'Hardware', flagKey: 'hardware' }
+                           ];
+                           return (
+                           <div className="space-y-2">
+                              <p className="text-xs text-slate-500 dark:text-slate-400">DRS Fully Automated required. EVC not reported is Discuss. vLCM is a Customer Check. Open one section at a time.</p>
+                              {renderReadinessAccordion('cl-all', 'All clusters (full columns)', (
+                                renderTable(rows, null, 'clusters', false, { powerFilter: false, columns: clusterCols })
+                              ), { defaultOpen: true, count: issueCount(rows), hint: 'DRS · HA · EVC · Build · Hardware' })}
+                              {renderReadinessAccordion('cl-drs', 'DRS not Fully Automated', (
+                                renderTable(drsRows, null, 'clusters', false, { powerFilter: false, columns: [
+                                  { key: 'name', label: 'Cluster' }, { key: 'hosts', label: 'Hosts' },
+                                  { key: 'drs', label: 'DRS', flagKey: 'drs' }
+                                ] })
+                              ), { defaultOpen: false, count: drsRows.length })}
+                              {renderReadinessAccordion('cl-ha', 'HA issues / not reported', (
+                                renderTable(haRows, null, 'clusters', false, { powerFilter: false, columns: [
+                                  { key: 'name', label: 'Cluster' }, { key: 'hosts', label: 'Hosts' },
+                                  { key: 'ha', label: 'HA', flagKey: 'ha' }
+                                ] })
+                              ), { defaultOpen: false, count: haRows.length })}
+                              {renderReadinessAccordion('cl-evc', 'EVC incomplete', (
+                                renderTable(evcRows, null, 'clusters', false, { powerFilter: false, columns: [
+                                  { key: 'name', label: 'Cluster' }, { key: 'hosts', label: 'Hosts' },
+                                  { key: 'evc', label: 'EVC', flagKey: 'evc' }
+                                ] })
+                              ), { defaultOpen: false, count: evcRows.length })}
+                              {renderReadinessAccordion('cl-mix', 'Mixed builds / hardware', (
+                                renderTable(buildHwRows, null, 'clusters', false, { powerFilter: false, columns: [
+                                  { key: 'name', label: 'Cluster' }, { key: 'hosts', label: 'Hosts' },
+                                  { key: 'build', label: 'ESXi build', flagKey: 'build' },
+                                  { key: 'hardware', label: 'Hardware', flagKey: 'hardware' }
+                                ] })
+                              ), { defaultOpen: false, count: buildHwRows.length })}
                            </div>
-                        )}
+                           );
+                        })()}
                         {readinessTab === 'vms' && (
                            <div className="space-y-2">
                               <p className="text-xs text-slate-500 dark:text-slate-400">Use the power filter above for powered-on vs powered-off VMs. Open one section at a time.</p>
@@ -13119,13 +13266,50 @@ const architectureMath = useMemo(() => {
                               ), { defaultOpen: false, count: issueCount(readinessResults.cdDrives) })}
                            </div>
                         )}
-                        {readinessTab === 'storage' && (
-                           <div>
-                              <h3 className="text-base font-bold mb-1 text-gray-800 dark:text-slate-100">Storage</h3>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Datastores, capacity, type, host accessibility, and paths. Missing <span className="font-mono">vMultiPath</span> is not a pass.</p>
-                              {renderTable(readinessResults.datastores, ['Asset Name', 'Cluster', 'Host(s)', 'Configuration Details', 'Result'], 'datastores', false, { powerFilter: false })}
+                        {readinessTab === 'storage' && (() => {
+                           const rows = readinessResults.datastores || [];
+                           const freeRows = rows.filter(r => r.flags && r.flags.free !== 'green');
+                           const formatRows = rows.filter(r => r.flags && r.flags.format !== 'green');
+                           const accessRows = rows.filter(r => r.flags && r.flags.access !== 'green');
+                           const dsCols = [
+                             { key: 'name', label: 'Datastore' },
+                             { key: 'cluster', label: 'Cluster' },
+                             { key: 'host', label: 'Host(s)' },
+                             { key: 'format', label: 'Format', flagKey: 'format' },
+                             { key: 'version', label: 'Version' },
+                             { key: 'free', label: 'Free space', flagKey: 'free' },
+                             { key: 'access', label: 'Access', flagKey: 'access' }
+                           ];
+                           return (
+                           <div className="space-y-2">
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Datastores, capacity, type, and access. Missing <span className="font-mono">vMultiPath</span> is not a pass. Open one section at a time.</p>
+                              {renderReadinessAccordion('ds-all', 'All datastores (full columns)', (
+                                renderTable(rows, null, 'datastores', false, { powerFilter: false, columns: dsCols })
+                              ), { defaultOpen: true, count: issueCount(rows), hint: 'Format · Version · Free · Access' })}
+                              {renderReadinessAccordion('ds-free', 'Low free space', (
+                                renderTable(freeRows, null, 'datastores', false, { powerFilter: false, columns: [
+                                  { key: 'name', label: 'Datastore' }, { key: 'cluster', label: 'Cluster' },
+                                  { key: 'free', label: 'Free space', flagKey: 'free' },
+                                  { key: 'format', label: 'Format', flagKey: 'format' }
+                                ] })
+                              ), { defaultOpen: false, count: freeRows.length })}
+                              {renderReadinessAccordion('ds-format', 'Format / type issues', (
+                                renderTable(formatRows, null, 'datastores', false, { powerFilter: false, columns: [
+                                  { key: 'name', label: 'Datastore' }, { key: 'cluster', label: 'Cluster' },
+                                  { key: 'format', label: 'Format', flagKey: 'format' },
+                                  { key: 'version', label: 'Version' }
+                                ] })
+                              ), { defaultOpen: false, count: formatRows.length })}
+                              {renderReadinessAccordion('ds-access', 'Access / accessibility', (
+                                renderTable(accessRows, null, 'datastores', false, { powerFilter: false, columns: [
+                                  { key: 'name', label: 'Datastore' }, { key: 'cluster', label: 'Cluster' },
+                                  { key: 'access', label: 'Access', flagKey: 'access' },
+                                  { key: 'host', label: 'Host(s)' }
+                                ] })
+                              ), { defaultOpen: false, count: accessRows.length })}
                            </div>
-                        )}
+                           );
+                        })()}
                         {readinessTab === 'networking' && (
                            <div className="space-y-2">
                               {renderReadinessAccordion('net-sw', 'Host Networking (Switches)', (
@@ -14861,7 +15045,10 @@ const architectureMath = useMemo(() => {
                            if (onPrimary) return { role, tier: 'recommend', locked: false };
                            return { role, tier: 'optional', locked: false };
                          }
-                         if (role === 'RESTORE_ONLY') return { role, tier: 'restore', locked: true };
+                         if (role === 'RESTORE_ONLY') {
+                           if (sel?.enabled) return { role, tier: 'from_primary', locked: false };
+                           return { role, tier: 'restore', locked: false };
+                         }
                          if (role === 'DEFER') {
                            if (sel?.enabled) return { role, tier: 'from_primary', locked: false };
                            return { role, tier: 'defer', locked: false };
@@ -14918,7 +15105,7 @@ const architectureMath = useMemo(() => {
                                             : meta.tier === 'from_primary' ? 'rounded-lg bg-sky-50/80 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 -ml-1 pl-2 pr-1 py-1.5'
                                             : (meta.tier === 'restore' || meta.tier === 'defer') ? 'opacity-55' : '';
                                           const locked = isDrMode
-                                            ? (meta.tier === 'must' || meta.tier === 'restore')
+                                            ? (meta.tier === 'must')
                                             : !!sel.isMandatory;
                                           return (
                                              <div key={comp} className={`border-l-2 ${meta?.tier === 'must' ? 'border-violet-500' : meta?.tier === 'recommend' ? 'border-amber-400' : meta?.tier === 'addon' ? 'border-emerald-300 dark:border-emerald-700' : 'border-slate-300 dark:border-slate-600'} pl-3 ${rowHighlight}`}>
@@ -15014,17 +15201,19 @@ const architectureMath = useMemo(() => {
                                  {fleetDrMaturity === 'GOOD' && (
                                    <div className="rounded-md border border-violet-200 dark:border-violet-800 bg-violet-50/80 dark:bg-violet-950/40 p-2.5 space-y-1.5">
                                      <p className="text-[11px] text-violet-950 dark:text-violet-100 leading-relaxed">
-                                       <strong className="text-violet-700 dark:text-violet-300">What you get (Good):</strong> P0 foundation sized and locked on — recovery vCenter, SDDC Manager, NSX Managers/Edges, MS runtime, Cloud Proxy. Enough to power on critical VMs with local networking.
+                                       <strong className="text-violet-700 dark:text-violet-300">What you get (Good):</strong> P0 foundation sized and locked on — recovery vCenter, SDDC Manager, NSX Managers, MS runtime, Cloud Proxy. Enough to power on critical VMs with local networking.
                                      </p>
-                                     <p className="text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed">Automation, Ops, License, Identity, Depot, and Log Management stay <strong>Restore later</strong> (not pre-sized). Check Opt-in for Avi/WLD only if a critical app needs them.</p>
+                                     <p className="text-[10px] text-amber-900 dark:text-amber-200 leading-relaxed"><strong>Don't forget:</strong> NSX Edges <em>or</em> VNAs — overlay/NAT/VPN/LB path before recovering dependent VMs. Edges stay optional (off) because some designs use VNAs instead.</p>
+                                     <p className="text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed">Automation, Ops, License, Identity, Depot, and Log Management stay <strong>Restore later</strong> — click any to preview size. Plan tabletop + controlled manual recovery tests; failback is a manually planned reverse-replication event.</p>
                                    </div>
                                  )}
                                  {fleetDrMaturity === 'BETTER' && (
                                    <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 p-2.5 space-y-1.5">
                                      <p className="text-[11px] text-amber-950 dark:text-amber-100 leading-relaxed">
-                                       <strong className="text-amber-800 dark:text-amber-200">What you get (Better):</strong> Good foundation, plus pre-size fleet apps that ran on primary (Ops, Automation, Blueprint) and recommended primary networking (Ops for Networks / VNA) — staged restore capacity <em>without</em> SRM protection groups.
+                                       <strong className="text-amber-800 dark:text-amber-200">What you get (Better):</strong> Good foundation, plus pre-size fleet apps that ran on primary (Ops, Automation, Blueprint) and recommended primary networking — staged restore capacity <em>without</em> SRM protection groups.
                                      </p>
-                                     <p className="text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed">Still restore Identity, License, Depot, and Log Management onto recovery VCFMS (locked off). Plan tested backups, reserved VIP/FQDN, and manual recovery runbooks.</p>
+                                     <p className="text-[10px] text-amber-900 dark:text-amber-200 leading-relaxed"><strong>Don't forget:</strong> Edges or VNAs if critical apps need overlay routing. Click Restore later (Logs, License, …) to see DR size vs this maturity target.</p>
+                                     <p className="text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed"><strong>DR testing / failback:</strong> Regular isolated recovery exercises, scripted validation, application-owner signoff, and a tested reverse-replication/failback runbook (still manual without SRM).</p>
                                    </div>
                                  )}
                                  {fleetDrMaturity === 'BEST' && (
@@ -15032,7 +15221,8 @@ const architectureMath = useMemo(() => {
                                      <p className="text-[11px] text-sky-950 dark:text-sky-100 leading-relaxed">
                                        <strong className="text-sky-800 dark:text-sky-200">What you get (Best):</strong> Good foundation, plus Ops and Automation sized for Fleet DR (P&R / redeploy+restore) and Blueprint capacity — assumes SRM or ACC with protection groups, recovery plans, and failback.
                                      </p>
-                                     <p className="text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed">Identity, License, Depot, and Log Management remain restore-onto-VCFMS (not a second active copy). Opt-in Avi/WLD when apps depend on them in the recovery plan.</p>
+                                     <p className="text-[10px] text-amber-900 dark:text-amber-200 leading-relaxed"><strong>Don't forget:</strong> Edges or VNAs in the recovery plan; click Restore later rows to include Identity/Logs/License in the red ceiling if you will restore them early.</p>
+                                     <p className="text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed"><strong>DR testing / failback:</strong> Non-disruptive SRM test plans, cleanup, planned migration, reprotect, and failback. Keep a manual contingency if orchestration fails.</p>
                                    </div>
                                  )}
                                  <p className="text-[11px] text-violet-950 dark:text-violet-100 leading-relaxed">
@@ -15094,16 +15284,35 @@ const architectureMath = useMemo(() => {
                         <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{architectureMath?.targetVcpu || 0} vCPU · {architectureMath?.targetRam || 0} GB{architectureMath?.drMinimumSizing ? ` · DR ${fleetDrMaturity === 'BEST' ? 'Best' : fleetDrMaturity === 'BETTER' ? 'Better' : 'Good'}` : ''}</span>
                      </summary>
 
+                  {architectureMath?.drMinimumSizing && architectureMath?.maturityTargetPayload && (
+                    <div className="mt-4 mb-2 rounded-xl border-2 border-violet-500 dark:border-violet-600 bg-violet-50 dark:bg-violet-950/40 p-4 shadow-sm">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-300">
+                        Target payload · {fleetDrMaturity === 'BEST' ? 'Best' : fleetDrMaturity === 'BETTER' ? 'Better' : 'Good'} (maturity baseline)
+                      </div>
+                      <div className="flex flex-wrap gap-6 mt-2 text-violet-950 dark:text-violet-100">
+                        <div><span className="text-2xl font-black">{architectureMath.maturityTargetPayload.targetVcpu || 0}</span> <span className="text-xs font-bold uppercase tracking-widest text-violet-700 dark:text-violet-300">vCPU</span></div>
+                        <div><span className="text-2xl font-black">{architectureMath.maturityTargetPayload.targetRam || 0}</span> <span className="text-xs font-bold uppercase tracking-widest text-violet-700 dark:text-violet-300">GB RAM</span></div>
+                        <div><span className="text-2xl font-black">{((architectureMath.maturityTargetPayload.targetStorage || 0) / 1024).toFixed(1)}</span> <span className="text-xs font-bold uppercase tracking-widest text-violet-700 dark:text-violet-300">TB Storage</span></div>
+                      </div>
+                      <p className="text-[11px] text-violet-900 dark:text-violet-200 mt-2 leading-relaxed">
+                        Auto-selected for the maturity radio. Clicking <strong>Restore later</strong> (e.g. Log Management) or Opt-in rows does not change this number — it raises the red ceiling below.
+                      </p>
+                    </div>
+                  )}
+
                   {architectureMath?.drMinimumSizing && architectureMath?.fullEstatePayload && (
                     <div className="mt-4 mb-2 rounded-xl border-2 border-rose-500 dark:border-rose-600 bg-rose-50 dark:bg-rose-950/40 p-4 shadow-sm">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-rose-800 dark:text-rose-300">Primary estate ceiling (single site)</div>
+                      <div className="text-[10px] font-black uppercase tracking-widest text-rose-800 dark:text-rose-300">Current DR payload · checkbox changes (fit uses this)</div>
                       <div className="flex flex-wrap gap-6 mt-2 text-rose-950 dark:text-rose-100">
                         <div><span className="text-2xl font-black">{architectureMath.fullEstatePayload.targetVcpu || 0}</span> <span className="text-xs font-bold uppercase tracking-widest text-rose-700 dark:text-rose-300">vCPU</span></div>
                         <div><span className="text-2xl font-black">{architectureMath.fullEstatePayload.targetRam || 0}</span> <span className="text-xs font-bold uppercase tracking-widest text-rose-700 dark:text-rose-300">GB RAM</span></div>
                         <div><span className="text-2xl font-black">{((architectureMath.fullEstatePayload.targetStorage || 0) / 1024).toFixed(1)}</span> <span className="text-xs font-bold uppercase tracking-widest text-rose-700 dark:text-rose-300">TB Storage</span></div>
                       </div>
                       <p className="text-[11px] text-rose-900 dark:text-rose-200 mt-2 leading-relaxed">
-                        Primary Required ∪ services selected before DR-only ∪ DR-min sized rows (one site). Always ≥ the blue DR-minimum target. Sheet columns: <strong>Required / Primary Required</strong> = primary instance; <strong>Fleet DR</strong> = recovery-site minimum.
+                        Whatever is checked now — maturity baseline plus Restore later / Edges / Avi / WLD clicks. Fit validation sizes this payload (one site).
+                        {architectureMath.primaryEstateCeiling && (
+                          <> Primary estate reference: {architectureMath.primaryEstateCeiling.targetVcpu} vCPU / {architectureMath.primaryEstateCeiling.targetRam} GB.</>
+                        )}
                       </p>
                     </div>
                   )}
@@ -15147,7 +15356,7 @@ const architectureMath = useMemo(() => {
                                    </span>
                                  )}
                                  {architectureMath?.drMinimumSizing ? (
-                                   <span className="ml-2 normal-case tracking-normal font-bold opacity-90">· DR-minimum recovery site (single site)</span>
+                                   <span className="ml-2 normal-case tracking-normal font-bold opacity-90">· DR {fleetDrMaturity === 'BEST' ? 'Best' : fleetDrMaturity === 'BETTER' ? 'Better' : 'Good'} · current checkboxes</span>
                                  ) : hldDrFleetPair ? (
                                    <span className="ml-2 normal-case tracking-normal font-bold opacity-90">· Fleet DR · single site (not ×2)</span>
                                  ) : architectureMath?.multiInstanceSizing && architectureMath.mgmtInstanceCount > 1 ? (

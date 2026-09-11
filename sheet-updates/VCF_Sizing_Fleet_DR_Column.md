@@ -13,11 +13,15 @@ Two independent columns drive Placement:
 
 | Maturity | Sizer behavior |
 |---|---|
-| **Good — minimum** | P0 foundation locked on only |
-| **Better — staged (no SRM)** | Good + pre-size DEFER apps that ran on primary (Ops, Automation, Blueprint) + primary networking recommends |
-| **Best — SRM / ACC** | Good + always size Ops / Automation / Blueprint for Fleet DR P&R and redeploy+restore |
+| **Good — minimum** | P0 foundation locked on only (Edges optional — don't forget Edges or VNAs) |
+| **Better — staged (no SRM)** | Good + pre-size DEFER apps that ran on primary + primary networking recommends; manual DR test / failback runbooks |
+| **Best — SRM / ACC** | Good + always size Ops / Automation / Blueprint; SRM test plans + reprotect / failback |
 
-Identity, License, Depot, and Log Management stay restore-later (locked off) at every maturity.
+**Restore later** rows (Identity, License, Depot, Log Management) stay off in the maturity baseline but are **clickable** — checking them raises the red “current DR payload” ceiling without changing the violet Good/Better/Best target.
+
+**Don't forget:** NSX Edges *or* VNAs for overlay/NAT/VPN/LB before recovering dependent VMs.
+
+Identity, License, Depot, and Log Management are not a second active copy at any maturity.
 
 
 ### Sheet values

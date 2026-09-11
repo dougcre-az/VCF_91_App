@@ -4,7 +4,7 @@ Identity Broker,VCF Management Services,Yes,Restore,Does not need a second activ
 License Server,VCF Management Services,Yes,Restore,Good: not required to start VMs — restore before licensing/lifecycle changes
 Log Management,VCF Management Services,No,Restore,Restore onto recovery VCFMS; do not pre-size a second LM stack
 Management Domain AVI Load Balancer,AVI Management Domain,No,No,Opt-in — promote to P0 when critical apps need LB
-Management Domain NSX Edges,VCF Management Domain,No,Yes,P0 — required before overlay/NAT/VPN dependent VMs
+Management Domain NSX Edges,VCF Management Domain,No,Yes,Optional — design may use VNAs instead; recommend when on primary (don't forget overlay path)
 Management Domain NSX Managers (Local / Global),VCF Management Domain,Yes,Yes,
 Management Domain Security Services Platform,Security Serices Platform Management Domain,No,No,
 Management Domain Virtual Network Appliances,VCF Management Domain,No,Yes,If design uses VNA — Recommend when on primary
