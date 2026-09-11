@@ -7688,10 +7688,12 @@ const VCFApp = () => {
       const activeModuleMeta = moduleMeta[activeModule] || [activeModule, ''];
       const [readinessTab, setReadinessTab] = useState('estate');
       const [viewFilter, setViewFilter] = useState('ALL');
+      const [powerFilter, setPowerFilter] = useState('ALL');
       const [readinessSearch, setReadinessSearch] = useState('');
       const [tableSort, setTableSort] = useState({ key: 'name', dir: 'asc' });
       const [tablePage, setTablePage] = useState(0);
       const [isDragOver, setIsDragOver] = useState(false);
+      const [sectionOpen, setSectionOpen] = useState({});
       const READINESS_PAGE_SIZE = 50;
       const [archFilter, setArchFilter] = useState('ALL');
       const [archSelectedCluster, setArchSelectedCluster] = useState('ALL');
@@ -9629,7 +9631,7 @@ const VCFApp = () => {
           const dnsServers = getCol(host, ['dnsservers', 'dns']);
           const ntpOk = (ntpServers && (rvTruthy(ntpdRunning) || ntpdRunning === 'true'));
           const dnsOk = !!dnsServers;
-          const esxVersion = getCol(host, ['esxversion', 'version', 'productversion', 'esxiver', 'hypervisor']);
+          const esxVersion = getCol(host, ['esxversion', 'productversion', 'esxiver', 'hypervisor', 'version']);
           const esxBuild = getCol(host, ['build', 'esxbuild', 'buildnumber']);
           const maintRaw = getCol(host, ['maintenancemode', 'maintenance', 'inmaintenancemode']);
           const connRaw = getCol(host, ['connectionstate', 'connection', 'hostconnectionstate']);
@@ -9637,20 +9639,60 @@ const VCFApp = () => {
           const conn = String(connRaw || '').toLowerCase();
           const disconnected = /notresponding|not responding|disconnected|inaccessible/i.test(conn);
           const connUnknown = !connRaw || /unknown|n\/a|^$/i.test(String(connRaw).trim());
+          const esxLabel = [esxVersion || 'unknown', esxBuild ? `build ${esxBuild}` : ''].filter(Boolean).join(' ');
+          const connLabel = connRaw || 'unknown';
+          const maintLabel = inMaint ? 'Yes' : 'No';
+          const ntpLabel = ntpOk ? (ntpServers ? `configured (${ntpServers})` : 'configured') : 'missing';
+          const dnsLabel = dnsOk ? (dnsServers ? `configured (${dnsServers})` : 'configured') : 'missing';
           let hostStatus = (ntpOk && dnsOk) ? 'green' : 'red';
           if (disconnected) hostStatus = 'red';
           else if ((inMaint || connUnknown) && hostStatus !== 'red') hostStatus = 'yellow';
           const hostBits = [
-            `ESXi ${esxVersion || 'unknown'}${esxBuild ? ` build ${esxBuild}` : ''}`,
-            `Connection: ${connRaw || 'unknown'}`,
-            `Maintenance: ${inMaint ? 'Yes' : 'No'}`,
-            `NTP: ${ntpOk ? 'configured' : 'missing'}`,
-            `DNS: ${dnsOk ? 'configured' : 'missing'}`
+            `ESXi ${esxLabel}`,
+            `Connection: ${connLabel}`,
+            `Maintenance: ${maintLabel}`,
+            `NTP: ${ntpLabel}`,
+            `DNS: ${dnsLabel}`
           ];
-          hostConfigRes.push({ id: genId(), name: hostName, cluster: clusterName, host: hostName, details: hostBits.join(' | '), status: hostStatus });
+          hostConfigRes.push({
+            id: genId(),
+            name: hostName,
+            cluster: clusterName,
+            host: hostName,
+            details: hostBits.join(' | '),
+            status: hostStatus,
+            esx: esxLabel,
+            connection: connLabel,
+            maintenance: maintLabel,
+            ntp: ntpLabel,
+            dns: dnsLabel,
+            flags: {
+              connection: disconnected ? 'red' : (connUnknown ? 'yellow' : 'green'),
+              maintenance: inMaint ? 'yellow' : 'green',
+              ntp: ntpOk ? 'green' : 'red',
+              dns: dnsOk ? 'green' : 'red',
+              esx: esxVersion ? 'green' : 'yellow'
+            }
+          });
           if (disconnected) {
             inventoryRes.push({ id: genId(), name: hostName, cluster: clusterName, host: hostName, details: 'Host disconnected or not responding', status: 'red' });
           }
+        });
+
+        const vmPowerOf = (row) => {
+          const p = String(getCol(row, ['powerstate', 'power', 'state']) || '').toLowerCase();
+          if (/powered\s*off|poweroff|\boff\b/.test(p)) return 'off';
+          if (/powered\s*on|poweron|\bon\b/.test(p)) return 'on';
+          return 'unknown';
+        };
+        const powerByVm = {};
+        (rvData.vInfo || []).forEach(vm => {
+          const n = getCol(vm, ['vm', 'name', 'vmname']);
+          if (n) powerByVm[String(n).toLowerCase()] = vmPowerOf(vm);
+        });
+        const withPower = (obj, vmName, sourceRow) => ({
+          ...obj,
+          power: (sourceRow && vmPowerOf(sourceRow)) || powerByVm[String(vmName || '').toLowerCase()] || 'unknown'
         });
 
         rvData.vInfo.forEach(vm => {
@@ -9658,7 +9700,7 @@ const VCFApp = () => {
           const clusterName = getCol(vm, ['cluster']);
           const hostName = getCol(vm, ['host', 'hostname']);
           if (!vmName) {
-            inventoryRes.push({ id: genId(), name: '(unnamed VM)', cluster: clusterName, host: hostName, details: 'Missing or invalid inventory values — VM name is blank', status: 'yellow' });
+            inventoryRes.push(withPower({ id: genId(), name: '(unnamed VM)', cluster: clusterName, host: hostName, details: 'Missing or invalid inventory values — VM name is blank', status: 'yellow' }, '(unnamed VM)', vm));
             return;
           }
 
@@ -9668,17 +9710,17 @@ const VCFApp = () => {
           const instanceUuid = String(getCol(vm, ['instanceuuid', 'instance uuid', 'vmuuid']) || '').trim();
           if (biosUuid && biosUuid !== '0') (biosMap[biosUuid.toLowerCase()] = biosMap[biosUuid.toLowerCase()] || []).push({ vmName, clusterName, hostName });
           if (instanceUuid && instanceUuid !== '0' && instanceUuid.toLowerCase() !== biosUuid.toLowerCase()) (instanceMap[instanceUuid.toLowerCase()] = instanceMap[instanceUuid.toLowerCase()] || []).push({ vmName, clusterName, hostName });
-          if (!biosUuid && !instanceUuid) inventoryRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Missing or invalid inventory values — BIOS/instance UUID blank', status: 'yellow' });
+          if (!biosUuid && !instanceUuid) inventoryRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Missing or invalid inventory values — BIOS/instance UUID blank', status: 'yellow' }, vmName, vm));
 
           const connState = String(getCol(vm, ['connectionstate', 'connection', 'gueststate', 'configstatus']) || '').toLowerCase();
           const configIssue = String(getCol(vm, ['configissue', 'configissues', 'issue']) || '');
           if (/orphan|inaccessible|invalid/i.test(connState) || /orphan|inaccessible/i.test(configIssue)) {
-            inventoryRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Orphaned or inaccessible VM (${connState || configIssue || 'config issue'})`, status: 'red' });
+            inventoryRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Orphaned or inaccessible VM (${connState || configIssue || 'config issue'})`, status: 'red' }, vmName, vm));
           }
           if (hostName && hostNames.size && !hostNames.has(hostName)) {
-            inventoryRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'VM registered on unexpected host — host is not in the vHost inventory', status: 'yellow' });
+            inventoryRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'VM registered on unexpected host — host is not in the vHost inventory', status: 'yellow' }, vmName, vm));
           }
-          if (!hostName) inventoryRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Missing or invalid inventory values — host is blank', status: 'yellow' });
+          if (!hostName) inventoryRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Missing or invalid inventory values — host is blank', status: 'yellow' }, vmName, vm));
 
           const ft = String(getCol(vm, ['ft', 'faulttolerance', 'ftstate', 'faulttolerancestate']) || '');
           const encrypted = String(getCol(vm, ['encrypted', 'vmencrypted', 'encryption']) || '');
@@ -9689,18 +9731,18 @@ const VCFApp = () => {
           const cpuResMhz = parseFloat(getCol(vm, ['cpureservation', 'cpureservationmhz', 'reservationmhz'])) || 0;
           const memRes = parseFloat(getCol(vm, ['memoryreservation', 'memoryreservationmb', 'memreservation'])) || 0;
           const memCfg = parseFloat(getCol(vm, ['memory', 'memorymb', 'memorymib'])) || 0;
-          if (rvTruthy(ft) || /enabled|primary|secondary/i.test(ft)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Fault Tolerance is enabled (${ft})`, status: 'red' });
-          if (rvTruthy(encrypted) || /encrypted|on/i.test(encrypted)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Encrypted VM', status: 'yellow' });
-          if (rvTruthy(vtpm) || /present|true|yes/i.test(vtpm)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'vTPM present', status: 'yellow' });
-          if (rvTruthy(passthrough) || /directpath|passthrough/i.test(passthrough)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'PCI passthrough or DirectPath I/O', status: 'red' });
-          if (rvTruthy(sriov) || /sriov|vgpu|grid/i.test(sriov)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `SR-IOV or vGPU device (${sriov})`, status: 'red' });
-          if (/must|affinity|pin/i.test(affinity)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Host affinity or pinned placement (${affinity})`, status: 'yellow' });
-          if (cpuResMhz >= 4000) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Large CPU reservation (${cpuResMhz} MHz)`, status: 'yellow' });
-          if ((memRes >= 16384) || (memCfg > 0 && memRes > 0 && memRes >= memCfg * 0.95)) specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Large memory reservation (${memRes} MB)`, status: 'yellow' });
+          if (rvTruthy(ft) || /enabled|primary|secondary/i.test(ft)) specialRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Fault Tolerance is enabled (${ft})`, status: 'red' }, vmName, vm));
+          if (rvTruthy(encrypted) || /encrypted|on/i.test(encrypted)) specialRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Encrypted VM', status: 'yellow' }, vmName, vm));
+          if (rvTruthy(vtpm) || /present|true|yes/i.test(vtpm)) specialRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'vTPM present', status: 'yellow' }, vmName, vm));
+          if (rvTruthy(passthrough) || /directpath|passthrough/i.test(passthrough)) specialRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'PCI passthrough or DirectPath I/O', status: 'red' }, vmName, vm));
+          if (rvTruthy(sriov) || /sriov|vgpu|grid/i.test(sriov)) specialRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `SR-IOV or vGPU device (${sriov})`, status: 'red' }, vmName, vm));
+          if (/must|affinity|pin/i.test(affinity)) specialRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Host affinity or pinned placement (${affinity})`, status: 'yellow' }, vmName, vm));
+          if (cpuResMhz >= 4000) specialRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Large CPU reservation (${cpuResMhz} MHz)`, status: 'yellow' }, vmName, vm));
+          if ((memRes >= 16384) || (memCfg > 0 && memRes > 0 && memRes >= memCfg * 0.95)) specialRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Large memory reservation (${memRes} MB)`, status: 'yellow' }, vmName, vm));
 
           if (vmNameStr.includes('ntnx') || vmNameStr.includes('cvm')) {
-              cpuRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `[NUTANIX CVM DETECTED] Nutanix HCI relies on Controller VMs. VCF 9.1 is fundamentally incompatible with Nutanix/NDFS. Hardware migration required.`, status: 'red' });
-              specialRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Nutanix controller VM — individual migration planning required', status: 'red' });
+              cpuRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `[NUTANIX CVM DETECTED] Nutanix HCI relies on Controller VMs. VCF 9.1 is fundamentally incompatible with Nutanix/NDFS. Hardware migration required.`, status: 'red' }, vmName, vm));
+              specialRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: 'Nutanix controller VM — individual migration planning required', status: 'red' }, vmName, vm));
               return;
           }
 
@@ -9710,7 +9752,7 @@ const VCFApp = () => {
               if (vmNameStr.includes('nsx')) swType = 'NSX Component';
               if (['aria', 'vrealize', 'vrops', 'vrli', 'vrlcm'].some(kw => vmNameStr.includes(kw))) swType = 'Aria Suite Component';
               
-              softwareRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `[VCF COMPONENT DETECTED] ${swType}. Before upgrading, you must validate this exact version against the VCF 9.1 Interoperability Matrix using the Official VCF Upgrade Planner.`, status: 'yellow' });
+              softwareRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `[VCF COMPONENT DETECTED] ${swType}. Before upgrading, you must validate this exact version against the VCF 9.1 Interoperability Matrix using the Official VCF Upgrade Planner.`, status: 'yellow' }, vmName, vm));
               return; 
           }
 
@@ -9741,14 +9783,14 @@ const VCFApp = () => {
                  osStatus = 'yellow'; supportLevel = 'Unknown OS'; 
               }
             }
-            osRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: vmOs, status: osStatus, vcgLevel: supportLevel });
+            osRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: vmOs, status: osStatus, vcgLevel: supportLevel }, vmName, vm));
           }
 
           const hwVersion = getCol(vm, ['hwversion', 'hardwareversion', 'version']);
           if (hwVersion) {
             const hwMatch = String(hwVersion).match(/(\d+)/); 
             const hwNum = hwMatch ? parseInt(hwMatch[1], 10) : 0;
-            hwRes.push({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Version: ${hwVersion}`, status: hwNum >= 17 ? 'green' : (hwNum >= 15 ? 'yellow' : 'red') });
+            hwRes.push(withPower({ id: genId(), name: vmName, cluster: clusterName, host: hostName, details: `Version: ${hwVersion}`, status: hwNum >= 17 ? 'green' : (hwNum >= 15 ? 'yellow' : 'red') }, vmName, vm));
           }
         });
 
@@ -10174,11 +10216,16 @@ if (rvData.vHBA) {
         if (!rvSheetPresent(rvData, 'vHealth')) inventoryRes.push({ id: genId(), name: 'Inventory health sheet', cluster: '', host: '', details: 'Not assessed—`vHealth` missing. Duplicate MAC/UUID checks below still ran from vInfo/vNetwork.', status: 'gray' });
         if (!rvSheetPresent(rvData, 'vDisk')) specialRes.push({ id: genId(), name: 'RDM / shared disks', cluster: '', host: '', details: 'Not assessed—`vDisk` missing', status: 'gray' });
 
+        const stampPower = (arr) => (arr || []).map(r => ({
+          ...r,
+          power: r.power || powerByVm[String(r.name || '').toLowerCase()] || 'unknown'
+        }));
+
         setReadinessResults({
-            cpus: cpuRes, hostConfig: hostConfigRes, guestOs: osRes, ioDevices: ioRes,
-            vNics: vNicRes, vmTools: toolsRes, vmHw: hwRes,
-            datastores: dsRes, dvSwitches: dvsRes, clusters: clusterRes, cdDrives: cdRes, snapshots: snapRes, software: softwareRes,
-            inventoryIssues: inventoryRes, specialVms: specialRes, dataQuality: qualityRes, hostNics: hostNicRes, vmkernel: vmkRes
+            cpus: cpuRes, hostConfig: hostConfigRes, guestOs: stampPower(osRes), ioDevices: ioRes,
+            vNics: stampPower(vNicRes), vmTools: stampPower(toolsRes), vmHw: stampPower(hwRes),
+            datastores: dsRes, dvSwitches: dvsRes, clusters: clusterRes, cdDrives: stampPower(cdRes), snapshots: stampPower(snapRes), software: stampPower(softwareRes),
+            inventoryIssues: stampPower(inventoryRes), specialVms: stampPower(specialRes), dataQuality: qualityRes, hostNics: hostNicRes, vmkernel: vmkRes
         });
       };
 
@@ -11168,21 +11215,40 @@ const architectureMath = useMemo(() => {
         
         const addSheet = (data, name, isGuestOs = false) => {
            if(!data || data.length === 0) return;
+           const isHostSetup = name === "Host Setup";
            const ws = XLSX.utils.json_to_sheet(data.map(item => {
                const row = {
                    "Asset Name": item.name,
-                   "Details": item.details
+                   "Cluster": item.cluster || '',
+                   "Host": item.host || ''
                };
+               if (isHostSetup) {
+                   row["ESXi"] = item.esx || '';
+                   row["Connection"] = item.connection || '';
+                   row["Maintenance"] = item.maintenance || '';
+                   row["NTP"] = item.ntp || '';
+                   row["DNS"] = item.dns || '';
+               } else {
+                   row["Details"] = item.details;
+               }
+               if (item.power && item.power !== 'unknown') {
+                   row["Power"] = item.power === 'on' ? 'On' : item.power === 'off' ? 'Off' : item.power;
+               }
                if (isGuestOs) {
                    row["VCG Tier"] = item.vcgLevel || 'N/A';
                }
-               // Add emojis and matching text for the detail sheets
                row["Readiness Status"] = READINESS_STATUS_LABEL[item.status] || item.status;
                return row;
            }));
 
            // Widen the columns
-           const cols = [{ wch: 40 }, { wch: 60 }];
+           const cols = [{ wch: 40 }, { wch: 24 }, { wch: 28 }];
+           if (isHostSetup) {
+             cols.push({ wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 28 }, { wch: 28 });
+           } else {
+             cols.push({ wch: 60 });
+           }
+           if (data.some(d => d.power && d.power !== 'unknown')) cols.push({ wch: 10 });
            if (isGuestOs) cols.push({ wch: 20 });
            cols.push({ wch: 20 }); 
            ws['!cols'] = cols;
@@ -12298,7 +12364,9 @@ const architectureMath = useMemo(() => {
         );
       };
 
-      const renderTable = (data, headers, tabKey, hasVcgCol = false) => {
+      const renderTable = (data, headers, tabKey, hasVcgCol = false, options = {}) => {
+        const columns = options.columns || null;
+        const applyPower = options.powerFilter !== false;
         if (!data || data.length === 0) return <p className="text-emerald-700 dark:text-emerald-300 font-semibold italic p-4">No issue observed in the supplied RVTools data for this category.</p>;
         
         const query = readinessSearch.trim().toLowerCase();
@@ -12310,11 +12378,24 @@ const architectureMath = useMemo(() => {
             if (viewFilter === 'GRAY') return r.status === 'gray';
             return true;
         }).filter(r => {
+            if (!applyPower || powerFilter === 'ALL') return true;
+            if (powerFilter === 'ON') return r.power === 'on';
+            if (powerFilter === 'OFF') return r.power === 'off';
+            return true;
+        }).filter(r => {
             if (!query) return true;
-            return [r.name, r.cluster, r.host, r.details, r.vcgLevel].some(v => String(v || '').toLowerCase().includes(query));
+            const hay = columns
+              ? columns.map(c => r[c.key]).concat([r.name, r.cluster, r.host, r.details, r.vcgLevel, r.power])
+              : [r.name, r.cluster, r.host, r.details, r.vcgLevel, r.power];
+            return hay.some(v => String(v || '').toLowerCase().includes(query));
         });
 
-        const colKeys = hasVcgCol ? ['name', 'cluster', 'host', 'details', 'vcgLevel', 'status'] : ['name', 'cluster', 'host', 'details', 'status'];
+        const colKeys = columns
+          ? columns.map(c => c.key).concat(['status'])
+          : (hasVcgCol ? ['name', 'cluster', 'host', 'details', 'vcgLevel', 'status'] : ['name', 'cluster', 'host', 'details', 'status']);
+        const headerLabels = columns
+          ? columns.map(c => c.label).concat(['Result'])
+          : headers;
         const dir = tableSort.dir === 'desc' ? -1 : 1;
         const sortKey = colKeys.includes(tableSort.key) ? tableSort.key : 'name';
         filteredData = [...filteredData].sort((a, b) => String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? ''), undefined, { numeric: true, sensitivity: 'base' }) * dir);
@@ -12325,6 +12406,7 @@ const architectureMath = useMemo(() => {
         const page = Math.min(tablePage, pageCount - 1);
         const pageRows = filteredData.slice(page * READINESS_PAGE_SIZE, (page + 1) * READINESS_PAGE_SIZE);
         const toggleSort = (key) => setTableSort(current => current.key === key ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
+        const cellTone = (flag) => flag === 'red' ? 'text-red-700 dark:text-red-300 font-semibold' : flag === 'yellow' ? 'text-amber-700 dark:text-amber-300 font-semibold' : '';
 
         return (
           <div>
@@ -12337,15 +12419,15 @@ const architectureMath = useMemo(() => {
               </div>
             )}
           </div>
-          <div className="overflow-x-auto max-h-96 border border-gray-200 dark:border-slate-700 rounded">
+          <div className="overflow-x-auto max-h-[28rem] border border-gray-200 dark:border-slate-700 rounded">
             <table className="min-w-full border-collapse text-sm relative whitespace-nowrap">
               <thead className="sticky top-0 bg-gray-100 dark:bg-slate-800 shadow-sm z-10">
-                <tr>{headers.map((h, i) => {
+                <tr>{headerLabels.map((h, i) => {
                   const key = colKeys[i] || 'name';
                   const active = sortKey === key;
                   return (
                     <th key={i}>
-                      <button type="button" onClick={() => toggleSort(key)} className="w-full border-b border-gray-300 dark:border-slate-600 p-3 text-left font-semibold text-gray-700 dark:text-slate-200 bg-gray-50 dark:bg-slate-950">
+                      <button type="button" onClick={() => toggleSort(key)} className="w-full border-b border-gray-300 dark:border-slate-600 p-2 text-left text-xs font-semibold text-gray-700 dark:text-slate-200 bg-gray-50 dark:bg-slate-950">
                         {h}{active ? (tableSort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
                       </button>
                     </th>
@@ -12355,16 +12437,24 @@ const architectureMath = useMemo(() => {
               <tbody>
                 {pageRows.map((row) => (
                   <tr key={row.id} className={`border-b ${rowStatusClass(row.status)}`}>
-                    <td className="p-3 font-medium border-r border-gray-200/50">{row.name}</td>
-                    <td className="p-3 border-r border-gray-200/50 text-slate-600 dark:text-slate-300">{row.cluster || '-'}</td>
-                    <td className="p-3 border-r border-gray-200/50 text-slate-600 dark:text-slate-300 truncate max-w-[150px]" title={row.host || '-'}>{row.host || '-'}</td>
-                    <td className="p-3 border-r border-gray-200/50">{row.details}</td>
-                    {hasVcgCol && <td className="p-3 border-r border-gray-200/50">{row.vcgLevel}</td>}
-                    <td className="p-2 border-r border-gray-200/50 w-56 text-center">
+                    {columns ? columns.map((c) => (
+                      <td key={c.key} className={`p-2 border-r border-gray-200/50 ${c.key === 'name' ? 'font-medium' : 'text-slate-600 dark:text-slate-300'} ${c.flagKey && row.flags ? cellTone(row.flags[c.flagKey]) : ''}`} title={String(row[c.key] ?? '')}>
+                        {c.key === 'power' ? (row.power === 'on' ? 'On' : row.power === 'off' ? 'Off' : '—') : (row[c.key] || '-')}
+                      </td>
+                    )) : (
+                      <>
+                        <td className="p-2 font-medium border-r border-gray-200/50">{row.name}</td>
+                        <td className="p-2 border-r border-gray-200/50 text-slate-600 dark:text-slate-300">{row.cluster || '-'}</td>
+                        <td className="p-2 border-r border-gray-200/50 text-slate-600 dark:text-slate-300 truncate max-w-[150px]" title={row.host || '-'}>{row.host || '-'}</td>
+                        <td className="p-2 border-r border-gray-200/50">{row.details}</td>
+                        {hasVcgCol && <td className="p-2 border-r border-gray-200/50">{row.vcgLevel}</td>}
+                      </>
+                    )}
+                    <td className="p-1.5 border-r border-gray-200/50 w-44 text-center">
                       <select 
                         value={row.status}
                         onChange={(e) => handleStatusOverride(tabKey, row.id, e.target.value)}
-                        className={`w-full font-bold text-xs p-2 rounded cursor-pointer outline-none appearance-none text-center shadow-sm transition-colors ${statusSelectClass(row.status)}`}
+                        className={`w-full font-bold text-[11px] p-1.5 rounded cursor-pointer outline-none appearance-none text-center shadow-sm transition-colors ${statusSelectClass(row.status)}`}
                       >
                         <option value="red">Action needed</option>
                         <option value="yellow">Discuss</option>
@@ -12380,6 +12470,39 @@ const architectureMath = useMemo(() => {
           </div>
         );
       };
+
+      const readinessSectionOpen = (id, defaultOpen = false) => {
+        if (Object.prototype.hasOwnProperty.call(sectionOpen, id)) return !!sectionOpen[id];
+        if (sectionOpen.__exclusive) return false;
+        return defaultOpen;
+      };
+      const toggleReadinessSection = (id, defaultOpen = false) => {
+        setSectionOpen(curr => {
+          const currentlyOpen = Object.prototype.hasOwnProperty.call(curr, id) ? !!curr[id] : (!curr.__exclusive && defaultOpen);
+          if (currentlyOpen) return { __exclusive: true, [id]: false };
+          return { __exclusive: true, [id]: true };
+        });
+        setTablePage(0);
+      };
+      const renderReadinessAccordion = (id, title, body, { defaultOpen = false, count = 0, hint = '' } = {}) => {
+        const open = readinessSectionOpen(id, defaultOpen);
+        return (
+          <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleReadinessSection(id, defaultOpen)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-900"
+            >
+              <span className="text-[10px] text-slate-400 w-3">{open ? '▼' : '▶'}</span>
+              <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{title}</span>
+              {count > 0 && <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">{count}</span>}
+              {hint && <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate ml-1">{hint}</span>}
+            </button>
+            {open && <div className="p-3 border-t border-slate-200 dark:border-slate-700">{body}</div>}
+          </div>
+        );
+      };
+      const issueCount = (arr) => (arr || []).filter(r => r.status === 'red' || r.status === 'yellow').length;
 
 
       const renderEstateSnapshot = () => {
@@ -12700,20 +12823,27 @@ const architectureMath = useMemo(() => {
                ) : (
                   <div className="flex-1 flex flex-col min-h-0">
                      {readinessTab !== 'estate' && readinessTab !== 'summary' && readinessTab !== 'quality' && readinessTab !== 'customer' && (
-                     <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 p-3 rounded-lg shadow-sm border mb-4 shrink-0">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Asset Filter:</span>
-                        <select value={viewFilter} onChange={(e) => { setViewFilter(e.target.value); setTablePage(0); }} className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs rounded focus:ring-blue-500 focus:border-blue-500 block p-1.5 cursor-pointer font-bold">
+                     <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-slate-900 px-2.5 py-2 rounded-lg shadow-sm border mb-3 shrink-0">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Filter</span>
+                        <select value={viewFilter} onChange={(e) => { setViewFilter(e.target.value); setTablePage(0); }} className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-[11px] rounded focus:ring-blue-500 focus:border-blue-500 block py-1 px-1.5 cursor-pointer font-bold">
                            <option value="ALL">Show all</option>
                            <option value="ISSUES">Action needed & discuss</option>
                            <option value="RED">Action needed only</option>
                            <option value="YELLOW">Discuss only</option>
                            <option value="GRAY">Not validated only</option>
                         </select>
-                        <input type="search" value={readinessSearch} onChange={(e) => { setReadinessSearch(e.target.value); setTablePage(0); }} placeholder="Search name, cluster, host, details…" className="min-w-[16rem] flex-1 border border-slate-300 dark:border-slate-600 rounded px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100" />
+                        {['vms', 'media', 'inventory', 'special'].includes(readinessTab) && (
+                          <select value={powerFilter} onChange={(e) => { setPowerFilter(e.target.value); setTablePage(0); }} className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-[11px] rounded py-1 px-1.5 cursor-pointer font-bold" title="VM power state">
+                             <option value="ALL">Powered on & off</option>
+                             <option value="ON">Powered on only</option>
+                             <option value="OFF">Powered off only</option>
+                          </select>
+                        )}
+                        <input type="search" value={readinessSearch} onChange={(e) => { setReadinessSearch(e.target.value); setTablePage(0); }} placeholder="Search name, cluster, host, details…" className="min-w-[12rem] flex-1 border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-[11px] bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100" />
                      </div>
                      )}
 
-                     <div className="flex flex-wrap gap-2 border-b border-gray-300 dark:border-slate-600 mb-6 pb-2 shrink-0">
+                     <div className="flex flex-nowrap gap-1 border-b border-gray-300 dark:border-slate-600 mb-3 pb-1.5 shrink-0 overflow-x-auto">
                         {(() => {
                            const tabs = [
                               { id: 'estate', label: 'Estate', keys: [] },
@@ -12736,11 +12866,11 @@ const architectureMath = useMemo(() => {
                               const badgeCrit = counts.red;
                               const help = READINESS_TAB_HELP[tab.id];
                               return (
-                           <button key={tab.id} onClick={() => { setReadinessTab(tab.id); setTablePage(0); }} className={`py-2 px-4 font-semibold text-sm rounded transition-colors duration-200 whitespace-nowrap inline-flex items-center gap-2 ${readinessTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 hover:bg-slate-100'}`}>
+                           <button key={tab.id} onClick={() => { setReadinessTab(tab.id); setTablePage(0); setSectionOpen({}); }} className={`py-1 px-2 font-semibold text-[11px] rounded transition-colors duration-200 whitespace-nowrap inline-flex items-center gap-1 shrink-0 ${readinessTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 hover:bg-slate-100'}`}>
                               {tab.label}
                               {help && (
                                 <span
-                                  className={`inline-flex ${readinessTab === tab.id ? '[&_svg]:text-blue-100 hover:[&_svg]:text-white' : ''}`}
+                                  className={`inline-flex scale-90 ${readinessTab === tab.id ? '[&_svg]:text-blue-100 hover:[&_svg]:text-white' : ''}`}
                                   onClick={(e) => e.stopPropagation()}
                                   onKeyDown={(e) => e.stopPropagation()}
                                   title="What this tab calls out"
@@ -12749,7 +12879,7 @@ const architectureMath = useMemo(() => {
                                 </span>
                               )}
                               {tab.id !== 'estate' && tab.id !== 'customer' && badgeN > 0 && (
-                                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${badgeCrit ? 'bg-red-600 text-white' : (counts.issues ? 'bg-amber-500 text-white' : 'bg-slate-500 text-white')}`}>{badgeN}</span>
+                                <span className={`text-[9px] font-black px-1 py-0.5 rounded-full ${badgeCrit ? 'bg-red-600 text-white' : (counts.issues ? 'bg-amber-500 text-white' : 'bg-slate-500 text-white')}`}>{badgeN}</span>
                               )}
                            </button>
                               );
@@ -12795,7 +12925,7 @@ const architectureMath = useMemo(() => {
                                           <tr key={row.id} className={`border-t border-slate-100 dark:border-slate-800 ${rowStatusClass(row.status)}`}>
                                              <td className="p-3 whitespace-nowrap">{badge(row.status)}</td>
                                              <td className="p-3 font-semibold">
-                                                <button type="button" className="text-left hover:underline" onClick={() => { setReadinessTab(row.tab === 'quality' ? 'quality' : row.tab); setTablePage(0); }}>{row.found}</button>
+                                                <button type="button" className="text-left hover:underline" onClick={() => { setReadinessTab(row.tab === 'quality' ? 'quality' : row.tab); setTablePage(0); setSectionOpen({}); }}>{row.found}</button>
                                              </td>
                                              <td className="p-3 text-slate-600 dark:text-slate-300">{row.why}</td>
                                              <td className="p-3 text-slate-600 dark:text-slate-300">{row.ask}</td>
@@ -12818,104 +12948,194 @@ const architectureMath = useMemo(() => {
                            );
                         })()}
                         {readinessTab === 'hardware' && (
-                           <div className="space-y-8">
-                              <div>
-                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Server Hardware (CPUs)</h3>
-                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Matched to the VCG <span className="font-bold">CPUs</span> sheet (series + supported releases). CPU family alone cannot prove server support — confirm the complete server model in the Broadcom Compatibility Guide (Customer Checks).</p>
-                                 {renderTable(readinessResults.cpus, ['Asset Name', 'Cluster', 'Host(s)', 'CPU / VCG series', 'VCG Series', 'Result'], 'cpus', true)}
-                              </div>
-                              <div>
-                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Storage Adapters (HBA)</h3>
-                                 {renderTable(readinessResults.ioDevices, ['Asset Name', 'Cluster', 'Host(s)', 'HBA Model', 'Result'], 'ioDevices')}
-                              </div>
+                           <div className="space-y-2">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Open one section at a time. CPU family alone cannot prove server support — confirm models in the BCG (Customer Checks).</p>
+                              {renderReadinessAccordion('hw-cpus', 'Server Hardware (CPUs)', (
+                                renderTable(readinessResults.cpus, ['Asset Name', 'Cluster', 'Host(s)', 'CPU / VCG series', 'VCG Series', 'Result'], 'cpus', true, { powerFilter: false })
+                              ), { defaultOpen: true, count: issueCount(readinessResults.cpus) })}
+                              {renderReadinessAccordion('hw-hba', 'Storage Adapters (HBA)', (
+                                renderTable(readinessResults.ioDevices, ['Asset Name', 'Cluster', 'Host(s)', 'HBA Model', 'Result'], 'ioDevices', false, { powerFilter: false })
+                              ), { defaultOpen: false, count: issueCount(readinessResults.ioDevices) })}
                            </div>
                         )}
-                        {readinessTab === 'hostSetup' && (
-                           <div>
-                              <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Host Setup</h3>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Host Config plus ESX version/build, maintenance mode, and disconnected hosts. Connection blank/unknown is Discuss (incomplete evidence). Forward/reverse DNS match and actual NTP skew are Customer Checks — RVTools only shows configured servers.</p>
-                              {renderTable(readinessResults.hostConfig, ['Asset Name', 'Cluster', 'Host(s)', 'Host setup details', 'Result'], 'hostConfig')}
+                        {readinessTab === 'hostSetup' && (() => {
+                           const rows = readinessResults.hostConfig || [];
+                           const connRows = rows.filter(r => r.flags && r.flags.connection !== 'green');
+                           const ntpDnsRows = rows.filter(r => r.flags && (r.flags.ntp !== 'green' || r.flags.dns !== 'green'));
+                           const maintRows = rows.filter(r => r.flags && r.flags.maintenance !== 'green');
+                           const esxRows = rows.filter(r => r.flags && r.flags.esx !== 'green');
+                           const hostCols = [
+                             { key: 'name', label: 'Host' },
+                             { key: 'cluster', label: 'Cluster' },
+                             { key: 'esx', label: 'ESXi version', flagKey: 'esx' },
+                             { key: 'connection', label: 'Connection', flagKey: 'connection' },
+                             { key: 'maintenance', label: 'Maintenance', flagKey: 'maintenance' },
+                             { key: 'ntp', label: 'NTP', flagKey: 'ntp' },
+                             { key: 'dns', label: 'DNS', flagKey: 'dns' }
+                           ];
+                           return (
+                           <div className="space-y-2">
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Connection, NTP/DNS, maintenance, and ESXi are separate sections so you can see which signal failed. Forward/reverse DNS match and clock skew remain Customer Checks.</p>
+                              {renderReadinessAccordion('host-all', 'All hosts (full columns)', (
+                                renderTable(rows, null, 'hostConfig', false, { powerFilter: false, columns: hostCols })
+                              ), { defaultOpen: true, count: issueCount(rows), hint: 'ESXi · Connection · Maintenance · NTP · DNS' })}
+                              {renderReadinessAccordion('host-conn', 'Connection issues', (
+                                <>
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Disconnected / not responding = Action needed. Blank or unknown connection = Discuss (incomplete export evidence).</p>
+                                  {renderTable(connRows, null, 'hostConfig', false, { powerFilter: false, columns: [
+                                    { key: 'name', label: 'Host' }, { key: 'cluster', label: 'Cluster' },
+                                    { key: 'connection', label: 'Connection', flagKey: 'connection' },
+                                    { key: 'maintenance', label: 'Maintenance', flagKey: 'maintenance' }
+                                  ] })}
+                                </>
+                              ), { defaultOpen: false, count: connRows.length })}
+                              {renderReadinessAccordion('host-ntp', 'NTP & DNS', (
+                                <>
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Missing NTP or DNS servers in RVTools is Action needed. Actual skew and reverse DNS are Customer Checks.</p>
+                                  {renderTable(ntpDnsRows, null, 'hostConfig', false, { powerFilter: false, columns: [
+                                    { key: 'name', label: 'Host' }, { key: 'cluster', label: 'Cluster' },
+                                    { key: 'ntp', label: 'NTP', flagKey: 'ntp' },
+                                    { key: 'dns', label: 'DNS', flagKey: 'dns' }
+                                  ] })}
+                                </>
+                              ), { defaultOpen: false, count: ntpDnsRows.length })}
+                              {renderReadinessAccordion('host-maint', 'Maintenance mode', (
+                                renderTable(maintRows, null, 'hostConfig', false, { powerFilter: false, columns: [
+                                  { key: 'name', label: 'Host' }, { key: 'cluster', label: 'Cluster' },
+                                  { key: 'maintenance', label: 'Maintenance', flagKey: 'maintenance' },
+                                  { key: 'connection', label: 'Connection', flagKey: 'connection' }
+                                ] })
+                              ), { defaultOpen: false, count: maintRows.length })}
+                              {renderReadinessAccordion('host-esx', 'ESXi version / build incomplete', (
+                                renderTable(esxRows, null, 'hostConfig', false, { powerFilter: false, columns: [
+                                  { key: 'name', label: 'Host' }, { key: 'cluster', label: 'Cluster' },
+                                  { key: 'esx', label: 'ESXi version', flagKey: 'esx' }
+                                ] })
+                              ), { defaultOpen: false, count: esxRows.length })}
                            </div>
-                        )}
+                           );
+                        })()}
                         {readinessTab === 'clusters' && (
                            <div>
-                              <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Clusters</h3>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">DRS (Fully Automated required), HA, EVC, host count, mixed builds, and hardware consistency. <span className="font-semibold">EVC not reported</span> is Discuss (amber), not a green pass. Host count is shown in Host(s). vLCM image management is a Customer Check.</p>
-                              {renderTable(readinessResults.clusters, ['Asset Name', 'Cluster', 'Host count', 'Cluster settings', 'Result'], 'clusters')}
+                              <h3 className="text-base font-bold mb-1 text-gray-800 dark:text-slate-100">Clusters</h3>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">DRS (Fully Automated required), HA, EVC, host count, mixed builds, and hardware consistency. <span className="font-semibold">EVC not reported</span> is Discuss. Host count is in Host(s). vLCM is a Customer Check.</p>
+                              {renderTable(readinessResults.clusters, ['Asset Name', 'Cluster', 'Host count', 'Cluster settings', 'Result'], 'clusters', false, { powerFilter: false })}
                            </div>
                         )}
                         {readinessTab === 'vms' && (
-                           <div className="space-y-8">
-                              <div>
-                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Operating Systems (Guest OS)</h3>
-                                 {renderTable(readinessResults.guestOs, ['Asset Name', 'Cluster', 'Host(s)', 'Configured Guest OS', 'VCG Tier', 'Result'], 'guestOs', true)}
-                              </div>
-                              <div>
-                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">VM Compatibility (VM Hardware)</h3>
-                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Preferred minimum vmx-17.</p>
-                                 {renderTable(readinessResults.vmHw, ['Asset Name', 'Cluster', 'Host(s)', 'Hardware Version', 'Result'], 'vmHw')}
-                              </div>
-                              <div>
-                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">VM Tools</h3>
-                                 {renderTable(readinessResults.vmTools, ['Asset Name', 'Cluster', 'Host(s)', 'Installed Tools Version', 'Result'], 'vmTools')}
-                              </div>
-                              <div>
-                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">VM Network Adapters</h3>
-                                 {renderTable(readinessResults.vNics, ['Asset Name', 'Cluster', 'Host(s)', 'Virtual Adapter Type', 'Result'], 'vNics')}
-                              </div>
+                           <div className="space-y-2">
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Use the power filter above for powered-on vs powered-off VMs. Open one section at a time.</p>
+                              {renderReadinessAccordion('vm-os', 'Operating Systems (Guest OS)', (
+                                renderTable(readinessResults.guestOs, ['Asset Name', 'Cluster', 'Host(s)', 'Configured Guest OS', 'VCG Tier', 'Result'], 'guestOs', true, {
+                                  columns: [
+                                    { key: 'name', label: 'VM' }, { key: 'cluster', label: 'Cluster' }, { key: 'host', label: 'Host' },
+                                    { key: 'power', label: 'Power' }, { key: 'details', label: 'Guest OS' }, { key: 'vcgLevel', label: 'VCG Tier' }
+                                  ]
+                                })
+                              ), { defaultOpen: true, count: issueCount(readinessResults.guestOs) })}
+                              {renderReadinessAccordion('vm-hw', 'VM Compatibility (Hardware)', (
+                                <>
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Preferred minimum vmx-17.</p>
+                                  {renderTable(readinessResults.vmHw, ['Asset Name', 'Cluster', 'Host(s)', 'Hardware Version', 'Result'], 'vmHw', false, {
+                                    columns: [
+                                      { key: 'name', label: 'VM' }, { key: 'cluster', label: 'Cluster' }, { key: 'host', label: 'Host' },
+                                      { key: 'power', label: 'Power' }, { key: 'details', label: 'Hardware version' }
+                                    ]
+                                  })}
+                                </>
+                              ), { defaultOpen: false, count: issueCount(readinessResults.vmHw) })}
+                              {renderReadinessAccordion('vm-tools', 'VM Tools', (
+                                renderTable(readinessResults.vmTools, ['Asset Name', 'Cluster', 'Host(s)', 'Installed Tools Version', 'Result'], 'vmTools', false, {
+                                  columns: [
+                                    { key: 'name', label: 'VM' }, { key: 'cluster', label: 'Cluster' }, { key: 'host', label: 'Host' },
+                                    { key: 'power', label: 'Power' }, { key: 'details', label: 'Tools' }
+                                  ]
+                                })
+                              ), { defaultOpen: false, count: issueCount(readinessResults.vmTools) })}
+                              {renderReadinessAccordion('vm-nics', 'VM Network Adapters', (
+                                renderTable(readinessResults.vNics, ['Asset Name', 'Cluster', 'Host(s)', 'Virtual Adapter Type', 'Result'], 'vNics', false, {
+                                  columns: [
+                                    { key: 'name', label: 'VM' }, { key: 'cluster', label: 'Cluster' }, { key: 'host', label: 'Host' },
+                                    { key: 'power', label: 'Power' }, { key: 'details', label: 'Adapter' }
+                                  ]
+                                })
+                              ), { defaultOpen: false, count: issueCount(readinessResults.vNics) })}
                            </div>
                         )}
                         {readinessTab === 'media' && (
-                           <div className="space-y-8">
-                              <div>
-                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Snapshots</h3>
-                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Snapshots older than 7 days are treated as action needed.</p>
-                                 {renderTable(readinessResults.snapshots, ['Asset Name', 'Cluster', 'Host(s)', 'Snapshot Details', 'Result'], 'snapshots')}
-                              </div>
-                              <div>
-                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Attached Media (CD / Floppy)</h3>
-                                 {renderTable(readinessResults.cdDrives, ['Asset Name', 'Cluster', 'Host(s)', 'Drive Details', 'Result'], 'cdDrives')}
-                              </div>
+                           <div className="space-y-2">
+                              {renderReadinessAccordion('media-snap', 'Snapshots', (
+                                <>
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Snapshots older than 7 days are Action needed.</p>
+                                  {renderTable(readinessResults.snapshots, ['Asset Name', 'Cluster', 'Host(s)', 'Snapshot Details', 'Result'], 'snapshots', false, {
+                                    columns: [
+                                      { key: 'name', label: 'VM' }, { key: 'cluster', label: 'Cluster' }, { key: 'host', label: 'Host' },
+                                      { key: 'power', label: 'Power' }, { key: 'details', label: 'Snapshot' }
+                                    ]
+                                  })}
+                                </>
+                              ), { defaultOpen: true, count: issueCount(readinessResults.snapshots) })}
+                              {renderReadinessAccordion('media-cd', 'Attached Media (CD / Floppy)', (
+                                renderTable(readinessResults.cdDrives, ['Asset Name', 'Cluster', 'Host(s)', 'Drive Details', 'Result'], 'cdDrives', false, {
+                                  columns: [
+                                    { key: 'name', label: 'VM' }, { key: 'cluster', label: 'Cluster' }, { key: 'host', label: 'Host' },
+                                    { key: 'power', label: 'Power' }, { key: 'details', label: 'Media' }
+                                  ]
+                                })
+                              ), { defaultOpen: false, count: issueCount(readinessResults.cdDrives) })}
                            </div>
                         )}
                         {readinessTab === 'storage' && (
                            <div>
-                              <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Storage</h3>
+                              <h3 className="text-base font-bold mb-1 text-gray-800 dark:text-slate-100">Storage</h3>
                               <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Datastores, capacity, type, host accessibility, and paths. Missing <span className="font-mono">vMultiPath</span> is not a pass.</p>
-                              {renderTable(readinessResults.datastores, ['Asset Name', 'Cluster', 'Host(s)', 'Configuration Details', 'Result'], 'datastores')}
+                              {renderTable(readinessResults.datastores, ['Asset Name', 'Cluster', 'Host(s)', 'Configuration Details', 'Result'], 'datastores', false, { powerFilter: false })}
                            </div>
                         )}
                         {readinessTab === 'networking' && (
-                           <div className="space-y-8">
-                              <div>
-                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Host Networking (Switches)</h3>
-                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">VCF 9.x requires <span className="font-bold">Distributed Switches (vDS 7.x+)</span>. Standard switches cannot be upgraded in place.</p>
-                                 {renderTable(readinessResults.dvSwitches, ['Asset Name', 'Cluster', 'Host(s)', 'Switch Version', 'Result'], 'dvSwitches')}
-                              </div>
-                              <div>
-                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Host uplinks</h3>
-                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">No switch reported is Discuss — often incomplete <span className="font-mono">vNIC</span> data, not proof the uplink is wrong.</p>
-                                 {renderTable(readinessResults.hostNics, ['Asset Name', 'Cluster', 'Host(s)', 'Adapter / uplink', 'Result'], 'hostNics')}
-                              </div>
-                              <div>
-                                 <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">VMkernel placement</h3>
-                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">VMkernel on a standard switch is Action needed. Missing IP is Discuss — confirm unused adapter vs incomplete export.</p>
-                                 {renderTable(readinessResults.vmkernel, ['Asset Name', 'Cluster', 'Host(s)', 'VMkernel details', 'Result'], 'vmkernel')}
-                              </div>
+                           <div className="space-y-2">
+                              {renderReadinessAccordion('net-sw', 'Host Networking (Switches)', (
+                                <>
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">VCF 9.x requires Distributed Switches (vDS 7.x+). Standard switches cannot be upgraded in place.</p>
+                                  {renderTable(readinessResults.dvSwitches, ['Asset Name', 'Cluster', 'Host(s)', 'Switch Version', 'Result'], 'dvSwitches', false, { powerFilter: false })}
+                                </>
+                              ), { defaultOpen: true, count: issueCount(readinessResults.dvSwitches) })}
+                              {renderReadinessAccordion('net-uplink', 'Host uplinks', (
+                                <>
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">No switch reported is Discuss — often incomplete <span className="font-mono">vNIC</span> data.</p>
+                                  {renderTable(readinessResults.hostNics, ['Asset Name', 'Cluster', 'Host(s)', 'Adapter / uplink', 'Result'], 'hostNics', false, { powerFilter: false })}
+                                </>
+                              ), { defaultOpen: false, count: issueCount(readinessResults.hostNics) })}
+                              {renderReadinessAccordion('net-vmk', 'VMkernel placement', (
+                                <>
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">VMkernel on a standard switch is Action needed. Missing IP is Discuss.</p>
+                                  {renderTable(readinessResults.vmkernel, ['Asset Name', 'Cluster', 'Host(s)', 'VMkernel details', 'Result'], 'vmkernel', false, { powerFilter: false })}
+                                </>
+                              ), { defaultOpen: false, count: issueCount(readinessResults.vmkernel) })}
                            </div>
                         )}
                         {readinessTab === 'inventory' && (
                            <div>
-                              <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Inventory Issues</h3>
-                              <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">RVTools found inventory records that may need cleanup before migration. Duplicate MAC/UUID and orphaned/inaccessible VMs are Action needed; softer findings such as zombie VMDKs are Discuss.</p>
-                              {renderTable(readinessResults.inventoryIssues, ['Asset Name', 'Cluster', 'Host(s)', 'What we found', 'Result'], 'inventoryIssues')}
+                              <h3 className="text-base font-bold mb-1 text-gray-800 dark:text-slate-100">Inventory Issues</h3>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">Duplicate MAC/UUID and orphaned/inaccessible VMs are Action needed; softer findings such as zombie VMDKs are Discuss. Use the power filter for VM rows.</p>
+                              {renderTable(readinessResults.inventoryIssues, ['Asset Name', 'Cluster', 'Host(s)', 'What we found', 'Result'], 'inventoryIssues', false, {
+                                columns: [
+                                  { key: 'name', label: 'Asset' }, { key: 'cluster', label: 'Cluster' }, { key: 'host', label: 'Host' },
+                                  { key: 'power', label: 'Power' }, { key: 'details', label: 'What we found' }
+                                ]
+                              })}
                            </div>
                         )}
                         {readinessTab === 'special' && (
                            <div>
-                              <h3 className="text-lg font-bold mb-1 text-gray-800 dark:text-slate-100">Special VMs</h3>
-                              <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">These VMs have configurations that may limit where or how they can move. RDMs, passthrough, encryption, FT, and affinity are grouped here instead of separate tabs.</p>
-                              {renderTable(readinessResults.specialVms, ['Asset Name', 'Cluster', 'Host(s)', 'Configuration', 'Result'], 'specialVms')}
+                              <h3 className="text-base font-bold mb-1 text-gray-800 dark:text-slate-100">Special VMs</h3>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">These VMs have configurations that may limit where or how they can move. Use the power filter above.</p>
+                              {renderTable(readinessResults.specialVms, ['Asset Name', 'Cluster', 'Host(s)', 'Configuration', 'Result'], 'specialVms', false, {
+                                columns: [
+                                  { key: 'name', label: 'VM' }, { key: 'cluster', label: 'Cluster' }, { key: 'host', label: 'Host' },
+                                  { key: 'power', label: 'Power' }, { key: 'details', label: 'Configuration' }
+                                ]
+                              })}
                            </div>
                         )}
                         {readinessTab === 'quality' && (() => {
