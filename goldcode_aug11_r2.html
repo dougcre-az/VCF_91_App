@@ -7858,6 +7858,8 @@ const VCFApp = () => {
       // Placement Engine: FULL_ESTATE = selected services for the site under design (one site).
       // DR_MINIMUM = recovery-site Fleet DR minimums (one site). Fleet DR pair never ×2's fit validation.
       const [placementPayloadScope, setPlacementPayloadScope] = useState('FULL_ESTATE'); // FULL_ESTATE | DR_MINIMUM
+      // DR-only maturity: GOOD = P0 min · BETTER = staged restore (no SRM) · BEST = Fleet DR + SRM/ACC
+      const [fleetDrMaturity, setFleetDrMaturity] = useState('GOOD'); // GOOD | BETTER | BEST
       const preDrMinimumSelectionsRef = useRef(null);
       const preDrMinimumWlCountRef = useRef(null);
 
@@ -8381,28 +8383,51 @@ const VCFApp = () => {
         return !!(s && s.enabled);
       };
 
-      const applyFleetDrMinimumSelections_ = (prev, snap) => {
+      const applyFleetDrMinimumSelections_ = (prev, snap, tier = 'GOOD') => {
+        const level = (tier === 'BETTER' || tier === 'BEST') ? tier : 'GOOD';
         const baseSnap = snap || prev;
         const next = {};
         Object.entries(prev || {}).forEach(([name, config]) => {
           if (!config) return;
           const role = fleetDrRoleForSelection_(name, config);
           let enabled = false;
-          if (role === 'MUST') enabled = true;
-          else if (role === 'IF_PRIMARY') enabled = wasEnabledOnPrimary_(name, baseSnap);
-          // RESTORE_ONLY / DEFER / ADDON / DEFAULT → off (DEFER & ADDON stay toggleable)
+          if (role === 'MUST') {
+            enabled = true;
+          } else if (role === 'IF_PRIMARY') {
+            // Recommend when on primary at every maturity; Best still respects primary scope.
+            enabled = wasEnabledOnPrimary_(name, baseSnap);
+          } else if (role === 'DEFER') {
+            // Automation / Ops / Blueprint: off at Good; pre-size from primary at Better; always size at Best (P&R / Fleet DR restore).
+            if (level === 'BEST') enabled = true;
+            else if (level === 'BETTER') enabled = wasEnabledOnPrimary_(name, baseSnap);
+            else enabled = false;
+          }
+          // RESTORE_ONLY / ADDON / DEFAULT stay off (Identity, License, Depot, Log locked; Avi/WLD opt-in)
           next[name] = { ...config, enabled, fleetDrRole: role };
         });
         const opsNetKey = Object.keys(next).find((k) => /operations\s+for\s+networks/i.test(k) && !/collector/i.test(k));
         const collectorKey = Object.keys(next).find((k) => /operations\s+for\s+networks\s+collector/i.test(k));
         if (opsNetKey && collectorKey && next[collectorKey]) {
+          const parentOn = !!next[opsNetKey].enabled;
+          // Better/Best: prefer a recovery-site collector when Networks is sized.
           next[collectorKey] = {
             ...next[collectorKey],
-            enabled: !!next[opsNetKey].enabled,
+            enabled: parentOn || (level !== 'GOOD' && wasEnabledOnPrimary_(collectorKey, baseSnap)),
             fleetDrRole: next[collectorKey].fleetDrRole === 'RESTORE_ONLY' ? 'RESTORE_ONLY' : 'IF_PRIMARY',
           };
         }
         return next;
+      };
+
+      const commitFleetDrMaturity = (tier) => {
+        const next = (tier === 'BETTER' || tier === 'BEST') ? tier : 'GOOD';
+        setFleetDrMaturity(next);
+        if (placementPayloadScope !== 'DR_MINIMUM') return;
+        setSizingSelections((prev) => {
+          if (!prev || Object.keys(prev).length === 0) return prev;
+          const snap = preDrMinimumSelectionsRef.current || prev;
+          return applyFleetDrMinimumSelections_(prev, snap, next);
+        });
       };
 
       // Primary-estate ceiling: Primary Required ∪ pre–DR-only selections ∪ DR-min sized rows (so ceiling never undershoots DR-min).
@@ -8440,7 +8465,7 @@ const VCFApp = () => {
               preDrMinimumWlCountRef.current = wlDomainCount;
             }
             const base = preDrMinimumSelectionsRef.current || prev;
-            return applyFleetDrMinimumSelections_(base, base);
+            return applyFleetDrMinimumSelections_(base, base, fleetDrMaturity);
           });
           setPlacementPayloadScope('DR_MINIMUM');
           return;
@@ -8683,11 +8708,11 @@ const VCFApp = () => {
                   };
                 }
               });
-              setSizingSelections(applyFleetDrMinimumSelections_(merged, snap));
+              setSizingSelections(applyFleetDrMinimumSelections_(merged, snap, fleetDrMaturity));
             } else {
               preDrMinimumSelectionsRef.current = initialSelections;
               preDrMinimumWlCountRef.current = wlDomainCount;
-              setSizingSelections(applyFleetDrMinimumSelections_(initialSelections, initialSelections));
+              setSizingSelections(applyFleetDrMinimumSelections_(initialSelections, initialSelections, fleetDrMaturity));
             }
           } else {
             setSizingSelections(initialSelections);
@@ -14822,7 +14847,7 @@ const architectureMath = useMemo(() => {
                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Core first: Management Services → Fleet → Management Domain → Workload Domain. Avi, SSP, and other add-ons stay below so they do not bury required placement.</p>
                           </div>
                         </div>
-                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{enabledCatalogCount} enabled{placementPayloadScope === 'DR_MINIMUM' ? ' · DR only' : ''}</span>
+                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{enabledCatalogCount} enabled{placementPayloadScope === 'DR_MINIMUM' ? ` · DR ${fleetDrMaturity === 'BEST' ? 'Best' : fleetDrMaturity === 'BETTER' ? 'Better' : 'Good'}` : ''}</span>
                      </summary>
                      {(() => {
                        const primarySnap = preDrMinimumSelectionsRef.current || {};
@@ -14952,9 +14977,9 @@ const architectureMath = useMemo(() => {
                                <div className="min-w-0">
                                  <div className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-300 flex items-center gap-1">
                                    Placement payload scope
-                                   <SizerInfo text="DR only follows Good-minimum priority: P0 foundation locked on (vCenter, SDDC, NSX Managers/Edges, MS runtime, Cloud Proxy). Automation/Ops/License/Identity stay Restore later (not locked on). Opt-in for Avi/WLD/SSP. Fit validation is one site." href={SIZER_DOCS.fleetDr.href} hrefLabel="Fleet DR blueprint" />
+                                   <SizerInfo text="DR only: pick Good / Better / Best maturity. Good = P0 foundation only. Better = also pre-size primary fleet apps (no SRM). Best = size Ops/Automation for Fleet DR + SRM/ACC. Fit validation is one site." href={SIZER_DOCS.fleetDr.href} hrefLabel="Fleet DR blueprint" />
                                  </div>
-                                 <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">Full estate = primary catalog. DR only = Good-minimum P0 foundation locked on; Automation/Ops deferred; Avi/WLD opt-in — never ×2.</p>
+                                 <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">Full estate = primary catalog. DR only = recovery site by maturity (Good / Better / Best) — never ×2.</p>
                                </div>
                              </div>
                              <div className="flex flex-wrap gap-4 mt-3">
@@ -14968,26 +14993,61 @@ const architectureMath = useMemo(() => {
                                </label>
                              </div>
                              {isDrMode && (
-                               <div className="mt-3 space-y-2 rounded-lg border border-violet-200 dark:border-violet-800 bg-white/70 dark:bg-slate-950/40 p-3">
+                               <div className="mt-3 space-y-3 rounded-lg border border-violet-200 dark:border-violet-800 bg-white/70 dark:bg-slate-950/40 p-3">
+                                 <div>
+                                   <div className="text-[10px] font-black uppercase tracking-widest text-violet-800 dark:text-violet-300 mb-2">Recovery maturity</div>
+                                   <div className="flex flex-wrap gap-3">
+                                     <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-100 cursor-pointer">
+                                       <input type="radio" name="pe-dr-maturity" className="h-3.5 w-3.5 accent-violet-600" checked={fleetDrMaturity === 'GOOD'} onChange={() => commitFleetDrMaturity('GOOD')} />
+                                       Good — minimum
+                                     </label>
+                                     <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-100 cursor-pointer">
+                                       <input type="radio" name="pe-dr-maturity" className="h-3.5 w-3.5 accent-violet-600" checked={fleetDrMaturity === 'BETTER'} onChange={() => commitFleetDrMaturity('BETTER')} />
+                                       Better — staged (no SRM)
+                                     </label>
+                                     <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-100 cursor-pointer">
+                                       <input type="radio" name="pe-dr-maturity" className="h-3.5 w-3.5 accent-violet-600" checked={fleetDrMaturity === 'BEST'} onChange={() => commitFleetDrMaturity('BEST')} />
+                                       Best — SRM / ACC
+                                     </label>
+                                   </div>
+                                 </div>
+                                 {fleetDrMaturity === 'GOOD' && (
+                                   <div className="rounded-md border border-violet-200 dark:border-violet-800 bg-violet-50/80 dark:bg-violet-950/40 p-2.5 space-y-1.5">
+                                     <p className="text-[11px] text-violet-950 dark:text-violet-100 leading-relaxed">
+                                       <strong className="text-violet-700 dark:text-violet-300">What you get (Good):</strong> P0 foundation sized and locked on — recovery vCenter, SDDC Manager, NSX Managers/Edges, MS runtime, Cloud Proxy. Enough to power on critical VMs with local networking.
+                                     </p>
+                                     <p className="text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed">Automation, Ops, License, Identity, Depot, and Log Management stay <strong>Restore later</strong> (not pre-sized). Check Opt-in for Avi/WLD only if a critical app needs them.</p>
+                                   </div>
+                                 )}
+                                 {fleetDrMaturity === 'BETTER' && (
+                                   <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 p-2.5 space-y-1.5">
+                                     <p className="text-[11px] text-amber-950 dark:text-amber-100 leading-relaxed">
+                                       <strong className="text-amber-800 dark:text-amber-200">What you get (Better):</strong> Good foundation, plus pre-size fleet apps that ran on primary (Ops, Automation, Blueprint) and recommended primary networking (Ops for Networks / VNA) — staged restore capacity <em>without</em> SRM protection groups.
+                                     </p>
+                                     <p className="text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed">Still restore Identity, License, Depot, and Log Management onto recovery VCFMS (locked off). Plan tested backups, reserved VIP/FQDN, and manual recovery runbooks.</p>
+                                   </div>
+                                 )}
+                                 {fleetDrMaturity === 'BEST' && (
+                                   <div className="rounded-md border border-sky-200 dark:border-sky-800 bg-sky-50/80 dark:bg-sky-950/30 p-2.5 space-y-1.5">
+                                     <p className="text-[11px] text-sky-950 dark:text-sky-100 leading-relaxed">
+                                       <strong className="text-sky-800 dark:text-sky-200">What you get (Best):</strong> Good foundation, plus Ops and Automation sized for Fleet DR (P&R / redeploy+restore) and Blueprint capacity — assumes SRM or ACC with protection groups, recovery plans, and failback.
+                                     </p>
+                                     <p className="text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed">Identity, License, Depot, and Log Management remain restore-onto-VCFMS (not a second active copy). Opt-in Avi/WLD when apps depend on them in the recovery plan.</p>
+                                   </div>
+                                 )}
                                  <p className="text-[11px] text-violet-950 dark:text-violet-100 leading-relaxed">
-                                   <strong className="text-violet-700 dark:text-violet-300">{mustCount} DR min</strong> P0 foundation services are locked on.
-                                   {recommendList.length > 0
-                                     ? <> Amber <strong>Recommend</strong> rows were on primary — click to size them, or </>
-                                     : <> </>}
+                                   <strong className="text-violet-700 dark:text-violet-300">{mustCount} DR min</strong> foundation services locked on.
                                    {recommendList.length > 0 && (
-                                     <button type="button" onClick={enableRecommendedFromPrimary_} className="font-black uppercase tracking-widest text-[10px] text-amber-800 dark:text-amber-200 underline underline-offset-2">
-                                       enable all recommended
-                                     </button>
+                                     <> Amber <strong>Recommend</strong> from primary — <button type="button" onClick={enableRecommendedFromPrimary_} className="font-black uppercase tracking-widest text-[10px] text-amber-800 dark:text-amber-200 underline underline-offset-2">enable all recommended</button></>
                                    )}
-                                   {recommendList.length === 0 && <span className="text-slate-600 dark:text-slate-300"> Automation, Ops, and License stay off unless you check them for Better/Best.</span>}
                                  </p>
                                  {recommendList.length > 0 && (
                                    <p className="text-[10px] text-amber-900 dark:text-amber-200 leading-relaxed">Recommended: {recommendList.join(' · ')}</p>
                                  )}
-                                 {restoreList.length > 0 && (
-                                   <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">Restore later: {restoreList.join(' · ')}</p>
+                                 {restoreList.length > 0 && fleetDrMaturity === 'GOOD' && (
+                                   <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">Restore later / deferred: {restoreList.join(' · ')}</p>
                                  )}
-                                 <p className="text-[10px] text-emerald-800 dark:text-emerald-200 leading-relaxed">Opt-in: Avi / WLD / SSP — check when a critical app needs them at P0.</p>
+                                 <p className="text-[10px] text-emerald-800 dark:text-emerald-200 leading-relaxed">Opt-in: Avi / WLD / SSP — check when a critical app needs them at recovery.</p>
                                </div>
                              )}
                            </div>
@@ -15031,7 +15091,7 @@ const architectureMath = useMemo(() => {
                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Does the management-domain payload fit? Recapture (N-1) stays collapsed below until you need it.</p>
                           </div>
                         </div>
-                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{architectureMath?.targetVcpu || 0} vCPU · {architectureMath?.targetRam || 0} GB{architectureMath?.drMinimumSizing ? ' · DR min' : ''}</span>
+                        <span className="inline-flex px-3 py-1.5 rounded-full border text-xs font-black bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-nowrap">{architectureMath?.targetVcpu || 0} vCPU · {architectureMath?.targetRam || 0} GB{architectureMath?.drMinimumSizing ? ` · DR ${fleetDrMaturity === 'BEST' ? 'Best' : fleetDrMaturity === 'BETTER' ? 'Better' : 'Good'}` : ''}</span>
                      </summary>
 
                   {architectureMath?.drMinimumSizing && architectureMath?.fullEstatePayload && (

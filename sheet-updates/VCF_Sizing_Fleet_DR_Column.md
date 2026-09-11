@@ -9,20 +9,16 @@ Two independent columns drive Placement:
 
 `Required=Yes` on Identity Broker / License / Automation does **not** mean lock them on at DR.
 
-## Good-minimum model (sizer)
+## Good / Better / Best (DR-only radios)
 
-Aligned to recovery priority P0→P5 and the Good/Better/Best clipboard:
+| Maturity | Sizer behavior |
+|---|---|
+| **Good — minimum** | P0 foundation locked on only |
+| **Better — staged (no SRM)** | Good + pre-size DEFER apps that ran on primary (Ops, Automation, Blueprint) + primary networking recommends |
+| **Best — SRM / ACC** | Good + always size Ops / Automation / Blueprint for Fleet DR P&R and redeploy+restore |
 
-| Badge | Checkbox | Components |
-|---|---|---|
-| **DR min** | Locked **on** | Mgmt vCenter, SDDC Manager, NSX Managers, NSX Edges, MS runtime control/worker, Cloud Proxy (, Protection & Recovery OVA if present) |
-| **Restore later** | Locked **off** | Identity Broker, License Server, Log Management, Software Depot (, Salt / Fleet LCM) |
-| **Restore later** | **Off**, unlocked | VCF Automation, VCF Operations, Protection Blueprint — check only to pre-size Better/Best |
-| **Recommend / From primary** | Conditional | Ops for Networks + collector, Virtual Network Appliances |
-| **Opt-in** | Off, unlocked | Avi, SSP, WLD vCenter/NSX, etc. |
+Identity, License, Depot, and Log Management stay restore-later (locked off) at every maturity.
 
-### Why Automation is not locked on
-Broadcom Fleet DR recovers Automation by deploying/staging on the recovery site and restoring from backup (P4). Good minimum: *not required for initial workload recovery*. Same for Ops (P3) — native vCenter/NSX monitoring covers the gap until restored or failed over via P&R.
 
 ### Sheet values
 | Fleet DR cell | Behavior |
