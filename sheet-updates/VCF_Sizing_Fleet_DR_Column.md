@@ -4,39 +4,34 @@ Two independent columns drive Placement:
 
 | Column | Purpose | Consumed when |
 |---|---|---|
-| **Required** (or rename to **Primary Required**) | Mandatory on the **primary** VCF instance | Full estate / normal placement |
-| **Fleet DR** | What to **size at the recovery site** in DR-only mode | Placement payload scope = DR only |
+| **Primary Required** | Mandatory on the **primary** VCF instance | Full estate |
+| **Fleet DR** | Recovery-site guidance in DR-only mode | Placement payload = DR only |
 
-They must not be conflated. `Required=Yes` on Identity Broker does **not** mean size it at DR — Fleet DR should be `Restore`.
+`Required=Yes` on Identity Broker / License / Automation does **not** mean lock them on at DR.
 
-## Fleet DR values
+## Good-minimum model (sizer)
 
-| Value | Checkbox in DR only |
+Aligned to recovery priority P0→P5 and the Good/Better/Best clipboard:
+
+| Badge | Checkbox | Components |
+|---|---|---|
+| **DR min** | Locked **on** | Mgmt vCenter, SDDC Manager, NSX Managers, NSX Edges, MS runtime control/worker, Cloud Proxy (, Protection & Recovery OVA if present) |
+| **Restore later** | Locked **off** | Identity Broker, License Server, Log Management, Software Depot (, Salt / Fleet LCM) |
+| **Restore later** | **Off**, unlocked | VCF Automation, VCF Operations, Protection Blueprint — check only to pre-size Better/Best |
+| **Recommend / From primary** | Conditional | Ops for Networks + collector, Virtual Network Appliances |
+| **Opt-in** | Off, unlocked | Avi, SSP, WLD vCenter/NSX, etc. |
+
+### Why Automation is not locked on
+Broadcom Fleet DR recovers Automation by deploying/staging on the recovery site and restoring from backup (P4). Good minimum: *not required for initial workload recovery*. Same for Ops (P3) — native vCenter/NSX monitoring covers the gap until restored or failed over via P&R.
+
+### Sheet values
+| Fleet DR cell | Behavior |
 |---|---|
-| **Yes** | On — size at recovery |
-| **Protect** | On — Ops / Ops for Networks (P&R) |
-| **Redeploy** | On — Automation (new deploy + restore) |
-| **Restore** | Off — restore onto recovery VCFMS; do not pre-deploy |
-| **No** | Off — not Fleet DR minimum |
+| **Restore** | Locked off |
+| **No** | Opt-in (still listed) |
+| **Yes / Protect / Redeploy** | Do **not** override Good-minimum heuristics for known components |
 
-## Recommended Fleet DR map
-
-See `VCF_Sizing_Fleet_DR_Map.csv` / `VCF_Sizing_Fleet_DR_Filled.csv`.
-
-### Must size at recovery (foundation + P&R + redeploy)
-vCenter (mgmt), NSX Managers (mgmt), NSX Edges (mgmt), VNA (mgmt), SDDC Manager, License Server, Cloud Proxy, MS runtime control/worker, Protection Blueprint Requirements, VCF Operations (`Protect`), Ops for Networks + collector (`Protect`), VCF Automation (`Redeploy`).
-
-### Restore only (do not pre-deploy)
-Identity Broker, Offline Software Depot, Log Management (, Salt / Fleet LCM if present).
-
-### No (not DR mgmt-app minimum)
-Avi, SSP (mgmt + WLD), WLD vCenter / NSX, Real-time Metrics, Licensing Hub.
-
-## App behavior notes
-- DR-only **ignores** Primary Required when deciding the locked minimum — only Fleet DR / heuristics for **DR min**.
-- **DR min (locked on):** Ops, Automation, SDDC Manager, mgmt vCenter, mgmt NSX Managers, MS runtime.
-- **From primary / Recommend:** Edges, VNA, License, Cloud Proxy, Protection Blueprint, Ops for Networks — included if they were on primary; otherwise amber **Recommend** to click (or Enable all recommended).
-- **Restore later:** Identity Broker, Depot, Log Management — dimmed, not sized.
-- Red callout = Primary Required ∪ pre–DR selections ∪ DR-min sized rows (one site) — always ≥ blue DR-minimum target.
-- **Fleet DR pair never multiplies fit validation ×2.** Primary and recovery are sized as separate single-site payloads.
-- Sheet Location typo `Serices` is normalized to `Services`; SSP mgmt and WLD are separate optional groups.
+## App notes
+- Fit validation is always **one site** (never ×2 for Fleet DR pair).
+- Red ceiling = primary estate ∪ current DR selections.
+- Critical-app Avi/firewalls belong in P0 via Opt-in when the customer needs them.

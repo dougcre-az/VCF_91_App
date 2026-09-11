@@ -1,24 +1,24 @@
 Component,Location,Required (any row Yes?),Fleet DR,Notes
-Cloud Proxy,VCF Fleet Components,Yes,Yes,
-Identity Broker,VCF Management Services,Yes,Restore,Blueprint ** — restore onto recovery VCFMS; do not pre-deploy
-License Server,VCF Management Services,Yes,Yes,
+Cloud Proxy,VCF Fleet Components,Yes,Yes,P0/P3 — recovery-site local proxy should be running for Ops visibility (does not block VM power-on)
+Identity Broker,VCF Management Services,Yes,Restore,Does not need a second active copy for initial workload recovery — restore later
+License Server,VCF Management Services,Yes,Restore,Good: not required to start VMs — restore before licensing/lifecycle changes
 Log Management,VCF Management Services,No,Restore,Restore onto recovery VCFMS; do not pre-size a second LM stack
-Management Domain AVI Load Balancer,AVI Management Domain,No,No,
-Management Domain NSX Edges,VCF Management Domain,No,Yes,Failover checklist: Edges must be available at recovery
+Management Domain AVI Load Balancer,AVI Management Domain,No,No,Opt-in — promote to P0 when critical apps need LB
+Management Domain NSX Edges,VCF Management Domain,No,Yes,P0 — required before overlay/NAT/VPN dependent VMs
 Management Domain NSX Managers (Local / Global),VCF Management Domain,Yes,Yes,
 Management Domain Security Services Platform,Security Serices Platform Management Domain,No,No,
-Management Domain Virtual Network Appliances,VCF Management Domain,No,Yes,Recovery mgmt networking path (if design uses VNA)
+Management Domain Virtual Network Appliances,VCF Management Domain,No,Yes,If design uses VNA — Recommend when on primary
 Management Domain vCenter,VCF Management Domain,Yes,Yes,
 Offline Software Depot,VCF Management Services,No,Restore,Blueprint ** — restore onto recovery VCFMS; do not pre-deploy
-Protection Blueprint Requirements,VCF Management Services,Yes,Yes,P&R / site-protection capacity used with Fleet DR Ops failover
+Protection Blueprint Requirements,VCF Management Services,Yes,Restore,Policy/state — not a separate OVA; not required to power on a VM
 Real-time Metrics,VCF Management Services,No,No,Optional MS workload — not Fleet DR minimum
-SDDC Manager,VCF Management Services,Yes,Yes,
-VCF Automation,VCF Fleet Components,No,Redeploy,"Redeploy NEW Automation on recovery, then restore from backup — must size"
-VCF Operations,VCF Fleet Components,Yes,Protect,Protection & Recovery (or CA) — size capacity at recovery
-VCF Operations for networks,VCF Management Services,No,Protect,Protection & Recovery — size if used in protected fleet
-VCF Operations for networks collector,VCF Management Services,No,Protect,Follows Ops for Networks
-VCF services runtime control nodes,VCF Management Services,Yes,Yes,
-VCF services runtime worker nodes,VCF Management Services,Yes,Yes,
+SDDC Manager,VCF Management Services,Yes,Yes,P0 — recovery-site SDDC Manager already running (do not restore primary SDDC Manager over it)
+VCF Automation,VCF Fleet Components,No,Redeploy,P4 — NOT Good-minimum; restore after VCFMS (unlocked pre-size only)
+VCF Operations,VCF Fleet Components,Yes,Protect,P3 — NOT Good-minimum to power on VMs; Best uses P&R (unlocked pre-size)
+VCF Operations for networks,VCF Management Services,No,Protect,Not required to power on apps — Recommend if used on primary
+VCF Operations for networks collector,VCF Management Services,No,Protect,Recovery-site local collector strongly preferred
+VCF services runtime control nodes,VCF Management Services,Yes,Yes,P0 — recovery-site VCFMS baseline must be running
+VCF services runtime worker nodes,VCF Management Services,Yes,Yes,P0 — baseline running; scale later for restored services
 Workload Domain AVI Load Balancer,AVI Workload Domain,No,No,
 Workload Domain NSX Managers (Local / Global),VCF Workload Domain,No,No,Not Fleet DR mgmt-app minimum
 Workload Domain Security Services Platform,Security Serices Platform Workload Domain,No,No,
